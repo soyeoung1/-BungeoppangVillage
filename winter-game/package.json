@@ -1,0 +1,38 @@
+{
+  "name": "winter-snack-shop",
+  "version": "1.0.0",
+  "description": "겨울 길거리 간식 가게 - 붕어빵 굽기 3D 게임",
+  "main": "electron-main.js",
+  "author": "student",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.student.wintersnack",
+    "productName": "WinterSnackShop",
+    "files": [
+      "index.html",
+      "main.js",
+      "electron-main.js",
+      "vendor/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "WinterSnackShop.exe"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  }
+}

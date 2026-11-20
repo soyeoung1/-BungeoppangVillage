@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>한 장 기획서</title>
+<style>
+  @page{size:A4;margin:20mm}
+  body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;color:#000;font-size:11pt;line-height:1.6}
+  h1{font-size:16pt;margin:0 0 12px}
+  h2{font-size:12pt;margin:14px 0 2px}
+  ul,ol{margin:0;padding-left:22px}
+  p{margin:0}
+</style></head><body>
+<h1>한 장 기획서 — 붕어빵 마을</h1>
+
+<h2>형태</h2>
+<p>가. 윈도우 단독 실행형 (설치 없이 .exe 파일 하나로 실행)</p>
+
+<h2>한 문장 설명</h2>
+<p>함박눈이 내리는 작은 겨울 마을에서, 지친 하루를 잠시 내려놓고 이웃들의 주문을 받아 붕어빵틀 앞에 서서 따끈따끈한 붕어빵을 구워 돈을 버는 힐링 3D 게임.</p>
+
+<h2>핵심 기능 (1개)</h2>
+<ul><li>마을 NPC에게 주문 퀘스트 받기 → 노점에서 1인칭 굽기 미니게임 (반죽 붓기, 재료 넣기, 뒤집기, 꺼내기. 앞뒤 익힘 정도에 따라 품질이 결정됨) → NPC에게 전달하고 보상과 호감도 받기 (호감도가 오르면 새 대사와 새 퀘스트가 열림)</li></ul>
+
+<h2>부가 기능 (3개)</h2>
+<ol>
+  <li>호떡 메뉴: 붕어빵과 다른 굽기 방식(누르기, 뒤집기)으로 호떡 만들기</li>
+  <li>상점: 번 돈으로 슈크림붕어빵, 팥붕어빵 같은 맛 레시피북을 사서 새로운 맛을 만들 수 있고, 포장지와 옷도 구매 가능</li>
+  <li>진행 저장과 효과음: 돈, 호감도, 산 레시피북을 컴퓨터에 저장하고, 굽는 소리와 배경음 제공</li>
+</ol>
+
+<h2>완료 기준 (3개)</h2>
+<ol>
+  <li>NPC에게 퀘스트를 받고, 붕어빵을 굽고, 다시 NPC에게 가서 퀘스트를 완료할 수 있다.</li>
+  <li>상점에서 새로운 레시피북, 포장지, 옷을 구매할 수 있다.</li>
+  <li>게임을 껐다 켜도 돈과 구매한 물건이 유지된다.</li>
+</ol>
+
+<h2>안 할 것 (3개)</h2>
+<ol>
+  <li>서버, 로그인, 랭킹 같은 온라인 기능</li>
+  <li>실행 중 AI API 호출</li>
+  <li>맵 확장, 인테리어 꾸미기</li>
+</ol>
+
+<h2>사용 기술</h2>
+<p>Three.js(3D) + Electron(exe 포장), 순수 JavaScript</p>
+</body></html>

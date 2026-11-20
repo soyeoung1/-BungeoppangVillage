@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>겨울 붕어빵 가게</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#cfe3f2;font-family:'Malgun Gothic',sans-serif}
+  canvas{display:block}
+  #hud{position:fixed;left:0;top:0;right:0;pointer-events:none;color:#fff;text-shadow:0 1px 3px #000a}
+  #top{display:flex;justify-content:space-between;padding:12px 18px;font-size:20px}
+  #msg{position:fixed;left:50%;bottom:60px;transform:translateX(-50%);background:#000a;color:#fff;padding:10px 20px;border-radius:12px;font-size:18px;display:none}
+  #order{position:fixed;right:18px;top:60px;background:#fffd;color:#333;padding:10px 16px;border-radius:14px;font-size:17px;text-shadow:none;display:none}
+  #help{position:fixed;left:18px;bottom:14px;color:#fff;font-size:14px;text-shadow:0 1px 3px #000;white-space:pre-line}
+  #cross{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#fff8;display:none}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="top"><div id="money">💰 0원</div><div id="inv">🐟 쟁반: 0개</div></div>
+</div>
+<div id="order"></div>
+<div id="msg"></div>
+<div id="help"></div>
+<script type="importmap">
+{"imports":{"three":"./vendor/three.module.js"}}
+</script>
+<script type="module" src="main.js"></script>
+</body>
+</html>

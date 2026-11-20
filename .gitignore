@@ -1,0 +1,9 @@
+# 다른 프로젝트 / 개인 파일
+mood-pick/
+기획서_제출용.md
+기획서_초안.md
+.claude/
+
+# 빌드 결과물과 설치 패키지 (용량이 큼)
+node_modules/
+winter-game/dist/
