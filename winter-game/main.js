@@ -153,6 +153,7 @@ const cols = [-0.7, 0, 0.7], rows = [-0.25, 0.25];
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 for (const rz of rows) for (const cx of cols) {
   const hole = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.04, 0.34), mat(0x111114));
+  hole.userData.noOutline = true;
   hole.position.set(cx, 0.17, rz); mold.add(hole);
   const hit = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.4), hitMat);
   hit.position.set(cx, 0.3, rz); mold.add(hit);
@@ -207,21 +208,52 @@ function setSlotState(s, st) {
 }
 
 // ---------- 플레이어 / 손님 ----------
-function person(shirt, hat) {
+// 통통한 캐릭터: 큰 구체 몸통 + 큰 머리 + 볼터치
+function chubby(o = {}) {
+  const { shirt = 0x3f7fbf, skin = 0xffdcc0, scarf = 0xd9453d, hat = { type: 'beanie', color: 0xd9453d } } = o;
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 1.0, 12), mat(shirt)); body.position.y = 0.7; body.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 12), mat(0xffd9b5)); head.position.y = 1.45; head.castShadow = true;
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(hat)); cap.position.y = 1.5;
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat(0x222222)); eyeL.position.set(-0.1, 1.47, 0.24);
-  const eyeR = eyeL.clone(); eyeR.position.x = 0.1;
-  const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.07, 8, 16), mat(0xd9453d)); scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.22;
-  g.add(body, head, cap, eyeL, eyeR, scarf); scene.add(g); return g;
+  const S = (r, c, sx = 1, sy = 1, sz = 1, noOut = false) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), mat(c));
+    m.scale.set(sx, sy, sz); m.castShadow = true; if (noOut) m.userData.noOutline = true; return m;
+  };
+  const body = S(0.5, shirt, 1, 0.95, 0.95); body.position.y = 0.5;
+  const head = S(0.46, skin); head.position.y = 1.3;
+  const eyeL = S(0.045, 0x2a2438, 1, 1.3, 0.6, true); eyeL.position.set(-0.15, 1.33, 0.41);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.15;
+  const chL = S(0.065, 0xff9fb0, 1, 0.7, 0.4, true); chL.position.set(-0.27, 1.2, 0.36);
+  const chR = chL.clone(); chR.position.x = 0.27;
+  const armL = S(0.15, shirt); armL.position.set(-0.52, 0.6, 0.05);
+  const armR = armL.clone(); armR.position.x = 0.52;
+  const footL = S(0.17, 0x5a4a6a, 1, 0.7, 1.3); footL.position.set(-0.2, 0.1, 0.1);
+  const footR = footL.clone(); footR.position.x = 0.2;
+  const sc = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.09, 8, 20), mat(scarf));
+  sc.rotation.x = Math.PI / 2; sc.position.y = 0.98;
+  g.add(body, head, eyeL, eyeR, chL, chR, armL, armR, footL, footR, sc);
+  const hc = hat.color;
+  if (hat.type === 'beanie' || hat.type === 'bear') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.49, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), mat(hc));
+    cap.position.y = 1.32; cap.castShadow = true; g.add(cap);
+    if (hat.type === 'beanie') { const p = S(0.11, 0xffffff); p.position.y = 1.84; g.add(p); }
+    else for (const sx of [-1, 1]) { const e = S(0.14, hc); e.position.set(sx * 0.32, 1.73, 0); g.add(e); }
+  } else if (hat.type === 'santa') {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.8, 14), mat(0xd9302a));
+    cone.position.set(0, 1.9, 0); cone.rotation.z = 0.15; cone.castShadow = true;
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.08, 8, 20), mat(0xffffff));
+    band.rotation.x = Math.PI / 2; band.position.y = 1.55;
+    const p = S(0.1, 0xffffff); p.position.set(0.14, 2.3, 0);
+    g.add(cone, band, p);
+  }
+  g.userData.body = body; g.userData.arms = [armL, armR];
+  g.userData.shirtMeshes = [body, armL, armR];
+  scene.add(g); return g;
 }
-const player = person(0x3f7fbf, 0xd9453d);
+const player = chubby({ shirt: 0x3f7fbf });
 player.position.set(0, 0, 4);
-const customer = person(0x7bbf6a, 0x555577);
+const customer = chubby({ shirt: 0x7bbf6a, hat: { type: 'beanie', color: 0x6a6a99 }, scarf: 0xf2c14e });
 const CUST_POS = new THREE.Vector3(3.8, 0, -3.4);
 customer.position.copy(CUST_POS); customer.rotation.y = Math.PI;
+
+addOutlines(scene);
 
 // ---------- 눈 ----------
 const SN = 1500;
@@ -249,7 +281,7 @@ function newOrder() {
   order = { n: 1 + Math.floor(Math.random() * 3) };
   customer.visible = true;
   const cols = [0x7bbf6a, 0xbf7bb6, 0xbfa24a, 0x6aa6bf];
-  customer.children[0].material.color.setHex(cols[Math.floor(Math.random() * cols.length)]);
+  customer.userData.shirtMeshes.forEach(m => m.material.color.setHex(cols[Math.floor(Math.random() * cols.length)]));
   updateHUD();
 }
 function updateHUD() {
