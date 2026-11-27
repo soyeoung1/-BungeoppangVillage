@@ -638,14 +638,14 @@ function setSlotState(s, st) {
 
 // ---------- 플레이어 / 손님 ----------
 // 2등신 겨울 캐릭터 (characters.js: 옵션 조합식)
-const { chubby, PRESETS } = createCharacterFactory({ THREE, mat, addOutlines, scene });
+const { chubby, PRESETS, setOutfit } = createCharacterFactory({ THREE, mat, addOutlines, scene });
 const player = chubby(PRESETS.player);
 player.position.set(0, 0, 4);
 const customer = chubby(PRESETS.kid);
 const CUST_POS = new THREE.Vector3(3.8, 0, -3.4);
 customer.position.copy(CUST_POS); customer.rotation.y = Math.PI;
 
-window.__dbg = window.__dbg || {}; window.__dbg.player = player;   // 개발용
+window.__dbg = window.__dbg || {}; window.__dbg.player = player; window.__dbg.chubby = chubby; window.__dbg.PRESETS = PRESETS; window.__dbg.setOutfit = setOutfit;   // 개발용
 // 마을 주민 5명 (손님 자리의 꼬마 포함 총 6명 + 플레이어): 집 앞/광장에 배치, 각자 다른 대기 모션
 const NPC_LIST = [customer];
 const NPC_SPOTS = { grandma: [-10.5, -9.5], postman: [14.2, 4.0], cafe: [-13.4, 2.0], prankster: [-3.4, 5.8] };
