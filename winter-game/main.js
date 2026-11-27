@@ -1,8 +1,12 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ---------- 기본 세팅 (푸른 저녁 밤 분위기) ----------
 const scene = new THREE.Scene();
-const FOG_COLOR = 0x8ca8db;                       // 하늘 지평선 색과 맞춰서 땅 끝이 하늘과 자연스럽게 이어짐
+const FOG_COLOR = 0x6b8ac2;                       // 하늘 지평선 색과 맞춰서 땅 끝이 하늘과 자연스럽게 이어짐
 scene.fog = new THREE.Fog(FOG_COLOR, 45, 300);
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.2, 700);
 camera.position.set(0, 6, 11);
@@ -12,13 +16,21 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
+const USE_BLOOM = !location.search.includes('nobloom');   // 느린 PC용: 주소 뒤에 ?nobloom
+// 후처리: 블룸(불빛 번짐). MSAA를 켜서 가장자리가 계단져 보이지 않게 함
+const composer = new EffectComposer(renderer);
+composer.renderTarget1.samples = 4; composer.renderTarget2.samples = 4;
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.38, 0.55, 1.0);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
 });
 
-scene.add(new THREE.HemisphereLight(0x9bb8ff, 0x7a6cae, 1.15));     // 푸른 밤하늘빛
-const sun = new THREE.DirectionalLight(0xbcd2ff, 0.85);              // 달빛
+scene.add(new THREE.HemisphereLight(0x8aa8f0, 0x7a6cae, 0.85));     // 푸른 밤하늘빛
+const sun = new THREE.DirectionalLight(0xb4c8ff, 0.65);              // 달빛
 sun.shadow.bias = -0.0005; sun.shadow.radius = 4;
 sun.position.set(-14, 24, 10); sun.castShadow = true;
 sun.shadow.camera.left = -32; sun.shadow.camera.right = 32;
@@ -86,12 +98,12 @@ const skyGroup = new THREE.Group(); scene.add(skyGroup);
     vertexShader: 'varying vec3 vp; void main(){ vp=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader: `varying vec3 vp; void main(){
       float h = normalize(vp).y;
-      vec3 top = vec3(0.04,0.09,0.25), mid = vec3(0.15,0.29,0.56), hor = vec3(0.549,0.659,0.859), warm = vec3(0.95,0.74,0.64);
+      vec3 top = vec3(0.03,0.06,0.18), mid = vec3(0.10,0.21,0.44), hor = vec3(0.42,0.54,0.76), warm = vec3(0.85,0.62,0.58);
       vec3 c = mix(hor, mid, smoothstep(0.0,0.32,h));
       c = mix(c, top, smoothstep(0.28,0.85,h));
       float band = exp(-pow((h-0.05)/0.05, 2.0)) * smoothstep(0.0,0.03,h);
       c = mix(c, warm, band*0.45);
-      gl_FragColor = vec4(c,1.0); }`
+      gl_FragColor = vec4(pow(c, vec3(2.2)),1.0); }`
   }));
   sky.userData.noOutline = true; sky.renderOrder = -10; skyGroup.add(sky);
   const N = 380, sp = new Float32Array(N * 3);
@@ -280,6 +292,7 @@ const MATS = {
   snow: mat(0xe6eeff), log: wt([140, 92, 50]), logEnd: mat(0xffffff, { map: ringTex }),
   glass: new THREE.MeshBasicMaterial({ color: 0xffcf6a }), glassWarm: new THREE.MeshBasicMaterial({ color: 0xffb347 }),
 };
+MATS.glass.color.multiplyScalar(2.0); MATS.glassWarm.color.multiplyScalar(2.2);   // 1보다 밝게 → 블룸으로 번짐
 const HOR = new Map([[MATS.timber, MATS.timberH], [MATS.timberLight, MATS.timberLightH], [MATS.roof, MATS.roofH]]);
 const smokeTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
@@ -433,7 +446,7 @@ function house(x, z, color = 0xdcb878, ry, o = {}) {
   // 랜턴(문 옆) + 작은 나무 간판(앞마당)
   const lx = 0.9;
   part(0.5, 0.06, 0.06, MATS.timber, lx + 0.1, base + 1.95, 0.25, df);
-  const lant = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 0.24), new THREE.MeshBasicMaterial({ color: 0xffd890 })); lant.position.set(lx + 0.3, base + 1.75, 0.3); df.add(lant);
+  const lant = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 0.24), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd890).multiplyScalar(2.0) })); lant.position.set(lx + 0.3, base + 1.75, 0.3); df.add(lant);
   const cap = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.16, 4), MATS.timber); cap.rotation.y = Math.PI / 4; cap.position.set(lx + 0.3, base + 1.99, 0.3); cap.userData.noOutline = true; df.add(cap);
   glow(df, lx + 0.3, base + 1.75, 0.5, 2.0, 0.9);
   part(0.12, 1.1, 0.12, MATS.timberLight, -2.4, 0.55, d / 2 + 1.7, g);
@@ -534,7 +547,7 @@ for (let n = 0, i = 0; n < 46 && i < 500; i++) {
 function lamp(x, z, withLight = false) {
   box(0.14, 3.2, 0.14, 0x2f3340, x, 1.6, z);
   box(0.5, 0.12, 0.5, 0x2f3340, x, 3.25, z);
-  const b = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffe08a }));
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe08a).multiplyScalar(1.9) }));
   b.position.set(x, 3.5, z); scene.add(b);
   glow(scene, x, 3.5, z, 3.6, 0.9);
   if (withLight) { const pl = new THREE.PointLight(0xffc766, 10, 11, 2); pl.position.set(x, 3.3, z); scene.add(pl); }
@@ -684,7 +697,7 @@ const flakeTex = (() => {
   x.fillStyle = g; x.fillRect(0, 0, 64, 64);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 })();
-const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ map: flakeTex, color: 0xffffff, size: 0.28, transparent: true, opacity: 0.95, depthWrite: false }));
+const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ map: flakeTex, color: 0xdfe8ff, size: 0.28, transparent: true, opacity: 0.95, depthWrite: false }));
 snow.frustumCulled = false; scene.add(snow);
 
 // ---------- 게임 상태 ----------
@@ -868,7 +881,7 @@ function tick() {
   if (!order) { orderTimer -= dt; if (orderTimer <= 0) newOrder(); }
   if (mode === 'third') warm.intensity = 14;
 
-  renderer.render(scene, camera);
+  if (USE_BLOOM) composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
 tick();
