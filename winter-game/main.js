@@ -1,17 +1,11 @@
 import * as THREE from 'three';
 
-// ---------- 기본 세팅 ----------
+// ---------- 기본 세팅 (푸른 저녁 밤 분위기) ----------
 const scene = new THREE.Scene();
-{
-  const c = document.createElement('canvas'); c.width = 2; c.height = 256;
-  const x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, '#9ccbef'); g.addColorStop(0.6, '#d8ecfa'); g.addColorStop(1, '#fde9ef');
-  x.fillStyle = g; x.fillRect(0, 0, 2, 256);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  scene.background = t;
-}
-scene.fog = new THREE.Fog(0xe6eef8, 28, 75);
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+const FOG_COLOR = 0x8ca8db;                       // 하늘 지평선 색과 맞춰서 땅 끝이 하늘과 자연스럽게 이어짐
+scene.fog = new THREE.Fog(FOG_COLOR, 45, 300);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.2, 700);
+camera.position.set(0, 6, 11);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -23,16 +17,16 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-scene.add(new THREE.HemisphereLight(0xe4f3ff, 0xd3c2e0, 1.35));
-const sun = new THREE.DirectionalLight(0xfff0d8, 1.0);
+scene.add(new THREE.HemisphereLight(0x9bb8ff, 0x5a6890, 1.15));     // 푸른 밤하늘빛
+const sun = new THREE.DirectionalLight(0xbcd2ff, 0.85);              // 달빛
 sun.shadow.bias = -0.0005; sun.shadow.radius = 4;
-sun.position.set(10, 20, 8); sun.castShadow = true;
-sun.shadow.camera.left = -30; sun.shadow.camera.right = 30;
-sun.shadow.camera.top = 30; sun.shadow.camera.bottom = -30;
+sun.position.set(-14, 24, 10); sun.castShadow = true;
+sun.shadow.camera.left = -32; sun.shadow.camera.right = 32;
+sun.shadow.camera.top = 32; sun.shadow.camera.bottom = -32;
 sun.shadow.mapSize.set(2048, 2048);
 scene.add(sun);
-const warm = new THREE.PointLight(0xffaa55, 0, 8); // 노점 불빛
-warm.position.set(0, 2.2, -5.5); scene.add(warm);
+const warm = new THREE.PointLight(0xffaa55, 0, 14, 2); // 노점 불빛
+warm.position.set(0, 2.4, -5.0); scene.add(warm);
 
 const $ = id => document.getElementById(id);
 // 카툰 느낌의 3단계 음영
@@ -77,11 +71,221 @@ function box(w, h, d, c, x, y, z, parent = scene) {
   m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
 }
 
-// ---------- 월드 ----------
-const ground = new THREE.Mesh(new THREE.CircleGeometry(40, 48), mat(0xf3f8ff));
+
+// ---------- 월드: 하늘 · 산 · 돌바닥 · 오두막 ----------
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rng = mulberry32(20261127);
+const R = (a, b) => a + rng() * (b - a);
+const PLAZA = new THREE.Vector3(3, 0, -2), PLAZA_R = 11;
+
+// 하늘: 카메라를 따라다니는 돔 + 별 + 달 (그래서 맵 끝이 보이지 않음)
+const skyGroup = new THREE.Group(); scene.add(skyGroup);
+{
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vp; void main(){ vp=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: `varying vec3 vp; void main(){
+      float h = normalize(vp).y;
+      vec3 top = vec3(0.04,0.09,0.25), mid = vec3(0.15,0.29,0.56), hor = vec3(0.549,0.659,0.859), warm = vec3(0.95,0.74,0.64);
+      vec3 c = mix(hor, mid, smoothstep(0.0,0.32,h));
+      c = mix(c, top, smoothstep(0.28,0.85,h));
+      float band = exp(-pow((h-0.05)/0.05, 2.0)) * smoothstep(0.0,0.03,h);
+      c = mix(c, warm, band*0.45);
+      gl_FragColor = vec4(c,1.0); }`
+  }));
+  sky.userData.noOutline = true; sky.renderOrder = -10; skyGroup.add(sky);
+  const N = 380, sp = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const a = rng() * Math.PI * 2, y = 0.12 + rng() * 0.88, r = Math.sqrt(1 - y * y);
+    sp[i * 3] = Math.cos(a) * r * 380; sp[i * 3 + 1] = y * 380; sp[i * 3 + 2] = Math.sin(a) * r * 380;
+  }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  skyGroup.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85, depthWrite: false })));
+  // 달
+  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+  const g = x.createRadialGradient(128, 128, 10, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,250,225,1)'); g.addColorStop(0.28, 'rgba(255,248,215,1)'); g.addColorStop(0.32, 'rgba(255,245,210,0.35)'); g.addColorStop(1, 'rgba(255,245,210,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), fog: false, depthWrite: false, transparent: true }));
+  moon.position.set(-170, 190, -260); moon.scale.set(90, 90, 1); skyGroup.add(moon);
+}
+
+// 눈 덮인 땅 (아주 넓게 → 안개와 섞여 끝이 안 보임)
+const ground = new THREE.Mesh(new THREE.CircleGeometry(300, 64), mat(0xeef3ff));
 ground.userData.noOutline = true;
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
+// 산: 겹겹이 3겹 + 아랫쪽은 어두운 숲, 윗쪽은 눈 덮인 봉우리
+function noise3(x, y, z) { return Math.sin(x * 1.7 + y * 0.9) * Math.cos(z * 1.3 - y * 0.7) * 0.5 + Math.sin(x * 3.1 + z * 2.7) * 0.25 + Math.sin(y * 2.3 + x * 0.6) * 0.25; }
+function mountain(x, z, r, h, sn) {
+  const g = new THREE.ConeGeometry(r, h, 8, 10, true);
+  const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
+  const snow = new THREE.Color(0xf2f6ff), rock = new THREE.Color(0x5b6a8c), forest = new THREE.Color(0x2a3d52), tmp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    let px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    const t = (py + h / 2) / h, n = noise3(px * 0.06 + sn, py * 0.05, pz * 0.06 + sn);
+    const k = 1 + n * 0.28 * (1 - t); pos.setXYZ(i, px * k, py + n * h * 0.07 * t, pz * k);
+    const line = 0.4 + n * 0.14;
+    tmp.copy(forest).lerp(rock, THREE.MathUtils.smoothstep(t, 0.12, 0.3)).lerp(snow, THREE.MathUtils.smoothstep(t, line - 0.05, line + 0.07));
+    col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat(0xffffff, { vertexColors: true }));
+  m.position.set(x, h / 2 - 5, z); m.rotation.y = rng() * 6; m.userData.noOutline = true; scene.add(m);
+}
+[[95, 16, 24, 34, 24, 40], [138, 16, 34, 48, 48, 80], [190, 14, 48, 68, 85, 125]].forEach(([Rr, n, r0, r1, h0, h1], ri) => {
+  for (let i = 0; i < n; i++) {
+    const a = (i + R(-0.3, 0.3)) / n * Math.PI * 2, d = Rr + R(-8, 8);
+    mountain(Math.cos(a) * d, Math.sin(a) * d, R(r0, r1), R(h0, h1), ri * 10 + i);
+  }
+});
+
+// 멀리 보이는 숲 (인스턴싱으로 가볍게)
+{
+  const N = 650, cg = new THREE.ConeGeometry(1.5, 3.6, 7), sg = new THREE.ConeGeometry(1.05, 1.7, 7);
+  const a = new THREE.InstancedMesh(cg, mat(0x1f4a44), N), b = new THREE.InstancedMesh(sg, mat(0xf5f8ff), N), d = new THREE.Object3D();
+  for (let i = 0; i < N; i++) {
+    const ang = rng() * Math.PI * 2, rr = R(46, 105), s = R(1, 2.6);
+    d.position.set(Math.cos(ang) * rr, 1.8 * s, Math.sin(ang) * rr); d.scale.setScalar(s); d.rotation.y = rng() * 6; d.updateMatrix(); a.setMatrixAt(i, d.matrix);
+    d.position.y = 3.3 * s; d.updateMatrix(); b.setMatrixAt(i, d.matrix);
+  }
+  a.userData.noOutline = b.userData.noOutline = true; scene.add(a, b);
+}
+
+// 돌바닥 텍스처
+function makeCobbleTexture() {
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d');
+  x.fillStyle = '#464b63'; x.fillRect(0, 0, S, S);
+  const rows = 8, rh = S / rows;
+  for (let r = 0; r < rows; r++) {
+    let px = -(r % 2) * 26 - rng() * 14;
+    while (px < S) {
+      const w = 46 + rng() * 34, sh = 112 + rng() * 55 | 0, warmT = rng() * 16 | 0;
+      for (const off of [0, -S]) {
+        x.fillStyle = `rgb(${sh + warmT},${sh},${sh + 16 - warmT})`;
+        x.beginPath(); x.roundRect(px + off + 3, r * rh + 3, w - 6, rh - 6, 14); x.fill();
+        x.fillStyle = 'rgba(255,255,255,0.14)'; x.beginPath(); x.roundRect(px + off + 7, r * rh + 5, w - 16, (rh - 6) * 0.34, 8); x.fill();
+      }
+      px += w;
+    }
+  }
+  for (let i = 0; i < 46; i++) {
+    x.fillStyle = `rgba(255,255,255,${0.25 + rng() * 0.3})`; x.beginPath();
+    x.ellipse(rng() * S, rng() * S, 6 + rng() * 14, 3 + rng() * 6, rng() * 3, 0, 7); x.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+}
+const cobbleBase = makeCobbleTexture();
+function cobbleMat(wd, len, y = 0) {
+  const t = cobbleBase.clone(); t.needsUpdate = true; t.repeat.set(wd / 2.6, len / 2.6);
+  return new THREE.MeshToonMaterial({ map: t, gradientMap: toonGrad, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+}
+const snowBedMat = mat(0xffffff);
+const ROADS = [];
+function flat(geo, material, y, x = 0, z = 0) {
+  const m = new THREE.Mesh(geo, material); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z);
+  m.receiveShadow = true; m.userData.noOutline = true; scene.add(m); return m;
+}
+// 광장
+flat(new THREE.RingGeometry(PLAZA_R - 0.5, PLAZA_R + 1.3, 56), snowBedMat, 0.02, PLAZA.x, PLAZA.z);
+flat(new THREE.CircleGeometry(PLAZA_R, 56), cobbleMat(PLAZA_R * 2, PLAZA_R * 2), 0.045, PLAZA.x, PLAZA.z);
+// 길
+function road(x1, z1, x2, z2, wd = 2.8) {
+  const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+  const g = new THREE.Group(); g.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2); g.rotation.y = Math.atan2(dx, dz); scene.add(g);
+  const bed = new THREE.Mesh(new THREE.PlaneGeometry(wd + 1.0, len + 0.8), snowBedMat); bed.rotation.x = -Math.PI / 2; bed.position.y = 0.02; bed.receiveShadow = true; bed.userData.noOutline = true; g.add(bed);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(wd, len), cobbleMat(wd, len)); m.rotation.x = -Math.PI / 2; m.position.y = 0.03; m.receiveShadow = true; m.userData.noOutline = true; g.add(m);
+  ROADS.push([x1, z1, x2, z2]);
+}
+function distSeg(px, pz, [x1, z1, x2, z2]) {
+  const dx = x2 - x1, dz = z2 - z1, t = THREE.MathUtils.clamp(((px - x1) * dx + (pz - z1) * dz) / (dx * dx + dz * dz), 0, 1);
+  return Math.hypot(px - (x1 + t * dx), pz - (z1 + t * dz));
+}
+
+// 빛 번짐(글로우)
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 2, 64, 64, 64); g.addColorStop(0, 'rgba(255,214,120,1)'); g.addColorStop(0.35, 'rgba(255,190,90,0.45)'); g.addColorStop(1, 'rgba(255,170,70,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c);
+})();
+function glow(parent, x, y, z, size = 2.2, op = 0.85) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending }));
+  s.position.set(x, y, z); s.scale.set(size, size, 1); parent.add(s); return s;
+}
+
+// 스위스풍 오두막
+const HOUSES = [], COLLIDERS = [];
+const GLASS = new THREE.MeshBasicMaterial({ color: 0xffcf6a });
+function winFrame(parent, x, y, wd, ht, zf, shutter) {
+  box(wd + 0.22, ht + 0.22, 0.1, 0x4a2f1c, x, y, zf + 0.03, parent);
+  const gl = new THREE.Mesh(new THREE.BoxGeometry(wd, ht, 0.1), GLASS); gl.position.set(x, y, zf + 0.07); parent.add(gl);
+  box(0.06, ht, 0.06, 0x4a2f1c, x, y, zf + 0.13, parent); box(wd, 0.06, 0.06, 0x4a2f1c, x, y, zf + 0.13, parent);
+  box(wd + 0.5, 0.1, 0.36, 0xffffff, x, y - ht / 2 - 0.16, zf + 0.15, parent);               // 창틀 위 눈
+  if (shutter !== undefined) for (const s of [-1, 1]) box(0.3, ht + 0.22, 0.08, shutter, x + s * (wd / 2 + 0.3), y, zf + 0.04, parent);
+  glow(parent, x, y, zf + 0.5, wd * 2.6, 0.55);
+}
+function chalet(x, z, o = {}) {
+  const { w = 6, d = 4.6, h = 2.7, roofH = 2.3, wall = 0x8a5a34, plaster = 0xf0dcb4, shutter = 0x3f6b4a, light = false } = o;
+  const g = new THREE.Group(); g.position.set(x, 0, z);
+  const phi = Math.atan2(PLAZA.x - x, PLAZA.z - z); g.rotation.y = phi; scene.add(g);
+  const topY = 0.5 + h;
+  box(w + 0.3, 0.5, d + 0.3, 0x8d8a99, 0, 0.25, 0, g);                                    // 돌 기단
+  box(w, h * 0.45, d, plaster, 0, 0.5 + h * 0.225, 0, g);                                  // 아래층 회벽
+  box(w, h * 0.55, d, wall, 0, 0.5 + h * 0.45 + h * 0.275, 0, g);                          // 위층 통나무
+  for (let i = 0; i < 3; i++) box(w + 0.05, 0.07, d + 0.05, 0x5c3a20, 0, 0.5 + h * 0.45 + h * (0.14 + i * 0.19), 0, g);
+  box(0.22, h + 0.5, 0.22, 0x5c3a20, -w / 2, (h + 0.5) / 2 + 0.25, d / 2, g); box(0.22, h + 0.5, 0.22, 0x5c3a20, w / 2, (h + 0.5) / 2 + 0.25, d / 2, g);
+  // 박공 벽
+  const sh = new THREE.Shape(); sh.moveTo(-w / 2, 0); sh.lineTo(w / 2, 0); sh.lineTo(0, roofH); sh.closePath();
+  const gable = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false }), mat(wall));
+  gable.position.set(0, topY, -d / 2); gable.castShadow = true; gable.userData.noOutline = true; g.add(gable);
+  const att = new THREE.Mesh(new THREE.CircleGeometry(0.38, 20), GLASS); att.position.set(0, topY + roofH * 0.38, d / 2 + 0.03); g.add(att);
+  glow(g, 0, topY + roofH * 0.38, d / 2 + 0.5, 2.4, 0.6);
+  // 지붕 + 눈
+  const a = Math.atan2(roofH, w / 2), ov = 0.65, ex = w / 2 + ov, ey = topY - ov * Math.tan(a), ay = topY + roofH + 0.05;
+  const len = Math.hypot(ex, ay - ey), cx = ex / 2, cy = (ay + ey) / 2;
+  for (const s of [-1, 1]) {
+    const r = box(len, 0.2, d + 1.1, 0x5a3a2a, s * cx, cy, 0, g); r.rotation.z = -s * a;
+    const sn = box(len * 0.98, 0.3, d + 1.2, 0xffffff, s * (cx + Math.sin(a) * 0.2), cy + Math.cos(a) * 0.2, 0, g); sn.rotation.z = -s * a;
+  }
+  box(0.7, 0.34, d + 1.2, 0xffffff, 0, ay + 0.1, 0, g);
+  // 굴뚝
+  box(0.65, 1.8, 0.65, 0x7a5a4a, w * 0.25, topY + roofH * 0.4 + 0.9, -d * 0.15, g);
+  box(0.9, 0.18, 0.9, 0xffffff, w * 0.25, topY + roofH * 0.4 + 1.85, -d * 0.15, g);
+  // 문 + 현관 지붕 + 등불
+  const dx = -w * 0.22;
+  box(1.1, 1.8, 0.1, 0x6b4526, dx, 0.5 + 0.9, d / 2 + 0.04, g); box(1.3, 0.12, 0.14, 0x4a2f1c, dx, 2.35, d / 2 + 0.06, g);
+  const dk = box(0.12, 0.1, 0.1, 0xffd36e, dx + 0.35, 1.5, d / 2 + 0.12, g); dk.visible = false;
+  const lant = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffdf8a })); lant.position.set(dx + 0.95, 2.0, d / 2 + 0.2); g.add(lant);
+  glow(g, dx + 0.95, 2.0, d / 2 + 0.3, 2.0, 0.9);
+  const awn = box(2.0, 0.14, 1.1, 0x5a3a2a, dx, 2.65, d / 2 + 0.55, g); awn.rotation.x = 0.12;
+  const awnS = box(2.1, 0.2, 1.15, 0xffffff, dx, 2.8, d / 2 + 0.55, g); awnS.rotation.x = 0.12;
+  // 창문 (앞 / 양옆)
+  winFrame(g, w * 0.24, 0.5 + h * 0.3, 1.0, 0.9, d / 2, shutter);
+  winFrame(g, -w * 0.28, 0.5 + h * 0.74, 0.9, 0.8, d / 2, shutter); winFrame(g, w * 0.28, 0.5 + h * 0.74, 0.9, 0.8, d / 2, shutter);
+  for (const s of [-1, 1]) {
+    const side = new THREE.Group(); side.position.set(s * w / 2, 0, 0); side.rotation.y = s * Math.PI / 2; g.add(side);
+    winFrame(side, -d * 0.2, 0.5 + h * 0.4, 0.9, 0.85, 0, shutter); winFrame(side, d * 0.2, 0.5 + h * 0.4, 0.9, 0.85, 0, shutter);
+  }
+  if (light) {
+    const pl = new THREE.PointLight(0xffb84d, 14, 12, 2); pl.position.set(dx, 2.4, d / 2 + 1.6); g.add(pl);
+  }
+  // 문 앞 지점 (길 연결용)
+  const fx = x + (dx * Math.cos(phi) + (d / 2 + 1.5) * Math.sin(phi)), fz = z + (-dx * Math.sin(phi) + (d / 2 + 1.5) * Math.cos(phi));
+  HOUSES.push({ x, z }); COLLIDERS.push({ x, z, r: Math.max(w, d) * 0.62 });
+  road(PLAZA.x, PLAZA.z, fx, fz);
+  return g;
+}
+chalet(-15, -13, { wall: 0x8a5a34, shutter: 0x3f6b4a, light: true });
+chalet(15, -13, { wall: 0x7a4e2c, shutter: 0xb5483d, plaster: 0xe9d3c5, light: true });
+chalet(-19, 4, { w: 5.4, d: 4.4, wall: 0x94623a, shutter: 0x2f5a7a, light: true });
+chalet(19, 6, { w: 5.6, d: 4.4, wall: 0x7d5232, shutter: 0x8a3f5a, plaster: 0xdfe8d2, light: true });
+chalet(-6, -21, { w: 7, d: 5, h: 3, wall: 0x6f4a2d, shutter: 0xb5483d });
+chalet(-25, -7, { w: 5.6, d: 4.6, wall: 0x8a5a34, shutter: 0x3f6b4a });
+chalet(25, -4, { w: 6, d: 4.6, wall: 0x94623a, shutter: 0x2f5a7a });
+chalet(-9, 19, { w: 6, d: 4.6, wall: 0x7a4e2c, shutter: 0x8a3f5a });
+chalet(13, 19, { w: 5.6, d: 4.4, wall: 0x8a5a34, shutter: 0xb5483d });
+
+// 눈 쌓인 소나무 (건물/길을 피해서)
 function tree(x, z) {
   box(0.4, 1.2, 0.4, 0x6b4a2b, x, 0.6, z);
   for (let i = 0; i < 3; i++) {
@@ -91,22 +295,18 @@ function tree(x, z) {
     s.position.set(x, 2.4 + i * 1.0, z); scene.add(s);
   }
 }
-function house(x, z, color, ry = 0) {
-  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g);
-  box(5, 3, 4, color, 0, 1.5, 0, g);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(4.2, 1.8, 4), mat(0xb5483d));
-  roof.position.y = 3.9; roof.rotation.y = Math.PI / 4; roof.castShadow = true; g.add(roof);
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(2.6, 0.7, 4), mat(0xffffff));
-  cap.position.y = 4.4; cap.rotation.y = Math.PI / 4; g.add(cap);
-  box(0.9, 1.6, 0.1, 0x7a4b2a, 0, 0.8, 2.02, g);
-  box(0.8, 0.8, 0.1, 0xffe9a0, 1.5, 1.8, 2.02, g);
+const clear = (x, z, hr, rr, pr) => HOUSES.every(h => Math.hypot(h.x - x, h.z - z) > hr) && ROADS.every(r => distSeg(x, z, r) > rr) && Math.hypot(x - PLAZA.x, z - PLAZA.z) > pr;
+for (let n = 0, i = 0; n < 34 && i < 400; i++) {
+  const a = rng() * Math.PI * 2, r = R(16, 40), x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (clear(x, z, 8, 3.2, PLAZA_R + 2)) { tree(x, z); n++; }
 }
-for (let i = 0; i < 26; i++) {
-  const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 16;
-  tree(Math.cos(a) * r, Math.sin(a) * r);
+// 눈 더미
+for (let n = 0, i = 0; n < 46 && i < 500; i++) {
+  const a = rng() * Math.PI * 2, r = R(8, 55), x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (!clear(x, z, 6, 3.4, PLAZA_R + 1.5)) continue;
+  const s = R(1.2, 4), m = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 8), mat(0xffffff));
+  m.scale.set(s, s * R(0.22, 0.36), s * R(0.8, 1.2)); m.position.set(x, 0, z); m.receiveShadow = true; m.userData.noOutline = true; scene.add(m); n++;
 }
-house(-12, -14, 0xf2d6a2, 0.2); house(12, -14, 0xc9e0c4, -0.2); house(-16, 4, 0xe9c5c5, 1.4);
-house(16, 2, 0xc5d6e9, -1.4);
 
 // 눈사람
 (function snowman() {
@@ -118,13 +318,16 @@ house(16, 2, 0xc5d6e9, -1.4);
   n.position.set(0, 2.7, 0.4); n.rotation.x = Math.PI / 2; g.add(n);
 })();
 
-// 가로등
-function lamp(x, z) {
-  box(0.12, 3.2, 0.12, 0x333844, x, 1.6, z);
-  const b = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffe9a0 }));
-  b.position.set(x, 3.3, z); scene.add(b);
+// 가로등 (따뜻한 노란 불빛)
+function lamp(x, z, withLight = false) {
+  box(0.14, 3.2, 0.14, 0x2f3340, x, 1.6, z);
+  box(0.5, 0.12, 0.5, 0x2f3340, x, 3.25, z);
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffe08a }));
+  b.position.set(x, 3.5, z); scene.add(b);
+  glow(scene, x, 3.5, z, 3.6, 0.9);
+  if (withLight) { const pl = new THREE.PointLight(0xffc766, 10, 11, 2); pl.position.set(x, 3.3, z); scene.add(pl); }
 }
-lamp(-4, -2); lamp(5, -1); lamp(8, 8); lamp(-9, 8);
+lamp(-4, -2, true); lamp(8, -1, true); lamp(9, 8); lamp(-9, 8); lamp(-8, -9); lamp(14, -8); lamp(-1, 14); lamp(5, 13);
 
 // ---------- 붕어빵 노점 ----------
 const STALL = new THREE.Vector3(0, 0, -6);
@@ -300,10 +503,10 @@ function setHelp() {
 }
 
 function enterFirst() {
-  mode = 'first'; player.visible = false; warm.intensity = 1.2; setHelp(); $('msg').style.display = 'none';
+  mode = 'first'; player.visible = false; warm.intensity = 26; setHelp(); $('msg').style.display = 'none';
 }
 function exitFirst() {
-  mode = 'third'; player.visible = true; warm.intensity = 0.6; hoverSlot = null; setHelp();
+  mode = 'third'; player.visible = true; warm.intensity = 14; hoverSlot = null; setHelp();
 }
 
 // ---------- 입력 ----------
@@ -371,6 +574,7 @@ setHelp(); newOrder();
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
+  skyGroup.position.copy(camera.position);
   // 눈
   const p = snowGeo.attributes.position;
   for (let i = 0; i < SN; i++) {
@@ -396,6 +600,7 @@ function tick() {
     const pp = player.position;
     if (Math.abs(pp.x) < 2.9 && pp.z < -4.8 && pp.z > -7.4) pp.z = pp.z > -6 ? -4.8 : -7.4;
     const r = Math.hypot(pp.x, pp.z); if (r > 34) { pp.x *= 34 / r; pp.z *= 34 / r; }
+    for (const c of COLLIDERS) { const dx = pp.x - c.x, dz = pp.z - c.z, dd = Math.hypot(dx, dz); if (dd < c.r) { pp.x = c.x + dx / dd * c.r; pp.z = c.z + dz / dd * c.r; } }
     // 카메라
     desired.set(pp.x + Math.sin(yaw) * Math.cos(pitch) * camDist, pp.y + 1 + Math.sin(pitch) * camDist, pp.z + Math.cos(yaw) * Math.cos(pitch) * camDist);
     camera.position.lerp(desired, 1 - Math.pow(0.0005, dt));
@@ -439,7 +644,7 @@ function tick() {
   // 텍스트/주문
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) { msgT = 0; $('msg').style.display = 'none'; } }
   if (!order) { orderTimer -= dt; if (orderTimer <= 0) newOrder(); }
-  if (mode === 'third') warm.intensity = 0.6;
+  if (mode === 'third') warm.intensity = 14;
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
