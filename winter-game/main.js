@@ -464,7 +464,15 @@ const snowGeo = new THREE.BufferGeometry();
 const sp = new Float32Array(SN * 3), sv = new Float32Array(SN);
 for (let i = 0; i < SN; i++) { sp[i * 3] = (Math.random() - .5) * 60; sp[i * 3 + 1] = Math.random() * 25; sp[i * 3 + 2] = (Math.random() - .5) * 60; sv[i] = 1 + Math.random() * 1.5; }
 snowGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.13, transparent: true, opacity: 0.9 }));
+// 동그랗고 가장자리가 흐릿한 눈송이 텍스처
+const flakeTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,0.85)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ map: flakeTex, color: 0xffffff, size: 0.28, transparent: true, opacity: 0.95, depthWrite: false }));
 snow.frustumCulled = false; scene.add(snow);
 
 // ---------- 게임 상태 ----------
