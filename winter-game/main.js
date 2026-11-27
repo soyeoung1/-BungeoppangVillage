@@ -4,13 +4,15 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createCharacterFactory } from './characters.js';
+import { buildVillage } from './village.js';
+import { buildDecor } from './decor.js';
 
 // ---------- 기본 세팅 (푸른 저녁 밤 분위기) ----------
 const scene = new THREE.Scene();
 const FOG_COLOR = 0x6b8ac2;                       // 하늘 지평선 색과 맞춰서 땅 끝이 하늘과 자연스럽게 이어짐
 scene.fog = new THREE.Fog(FOG_COLOR, 45, 300);
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.2, 700);
-camera.position.set(0, 6, 11);
+camera.position.set(0, 6, 36);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -89,7 +91,7 @@ function box(w, h, d, c, x, y, z, parent = scene) {
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const rng = mulberry32(20261127);
 const R = (a, b) => a + rng() * (b - a);
-const PLAZA = new THREE.Vector3(3, 0, -2), PLAZA_R = 11;
+const PLAZA = new THREE.Vector3(0, 0, 1), PLAZA_R = 9.6;     // 마을배치도: 광장 중심(0,1) 반지름 9
 
 // 하늘: 카메라를 따라다니는 돔 + 별 + 달 (그래서 맵 끝이 보이지 않음)
 const skyGroup = new THREE.Group(); scene.add(skyGroup);
@@ -153,18 +155,6 @@ function mountain(x, z, r, h, sn) {
   }
 });
 
-// 멀리 보이는 숲 (인스턴싱으로 가볍게)
-{
-  const N = 260, cg = new THREE.ConeGeometry(1.5, 3.6, 7), sg = new THREE.ConeGeometry(1.05, 1.7, 7);
-  const a = new THREE.InstancedMesh(cg, mat(0x1f4a44), N), b = new THREE.InstancedMesh(sg, mat(0xf5f8ff), N), d = new THREE.Object3D();
-  for (let i = 0; i < N; i++) {
-    const ang = rng() * Math.PI * 2, rr = R(46, 105), s = R(1, 2.6);
-    d.position.set(Math.cos(ang) * rr, 1.8 * s, Math.sin(ang) * rr); d.scale.setScalar(s); d.rotation.y = rng() * 6; d.updateMatrix(); a.setMatrixAt(i, d.matrix);
-    d.position.y = 3.3 * s; d.updateMatrix(); b.setMatrixAt(i, d.matrix);
-  }
-  a.userData.noOutline = b.userData.noOutline = true; scene.add(a, b);
-}
-
 // 돌바닥 텍스처
 function makeCobbleTexture() {
   const S = 512, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d');
@@ -194,25 +184,39 @@ function cobbleMat(wd, len, y = 0) {
   return new THREE.MeshToonMaterial({ map: t, gradientMap: toonGrad, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
 }
 const snowBedMat = mat(0xffffff);
-const ROADS = [];
+const ROADPTS = [], PATHS = [];
 function flat(geo, material, y, x = 0, z = 0) {
   const m = new THREE.Mesh(geo, material); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z);
   m.receiveShadow = true; m.userData.noOutline = true; scene.add(m); return m;
 }
-// 광장
-flat(new THREE.RingGeometry(PLAZA_R - 0.5, PLAZA_R + 1.3, 56), snowBedMat, 0.02, PLAZA.x, PLAZA.z);
+// 광장 (0,1) r=9
 flat(new THREE.CircleGeometry(PLAZA_R, 56), cobbleMat(PLAZA_R * 2, PLAZA_R * 2), 0.045, PLAZA.x, PLAZA.z);
-// 길
-function road(x1, z1, x2, z2, wd = 2.8) {
-  const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
-  const g = new THREE.Group(); g.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2); g.rotation.y = Math.atan2(dx, dz); scene.add(g);
-  const bed = new THREE.Mesh(new THREE.PlaneGeometry(wd + 1.0, len + 0.8), snowBedMat); bed.rotation.x = -Math.PI / 2; bed.position.y = 0.02; bed.receiveShadow = true; bed.userData.noOutline = true; g.add(bed);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(wd, len), cobbleMat(wd, len)); m.rotation.x = -Math.PI / 2; m.position.y = 0.03; m.receiveShadow = true; m.userData.noOutline = true; g.add(m);
-  ROADS.push([x1, z1, x2, z2]);
+// 길: 마을배치도의 구불구불한 길 (Catmull-Rom 곡선 → 띠 메시)
+function catmull(pts, n = 10) {
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[i], c = pts[i + 1], d = pts[Math.min(pts.length - 1, i + 2)];
+    for (let k = 0; k < n; k++) { const t = k / n, t2 = t * t, t3 = t2 * t; out.push([0, 1].map(j => 0.5 * ((2 * b[j]) + (-a[j] + c[j]) * t + (2 * a[j] - 5 * b[j] + 4 * c[j] - d[j]) * t2 + (-a[j] + 3 * b[j] - 3 * c[j] + d[j]) * t3))); }
+  }
+  out.push(pts[pts.length - 1]); return out;
 }
-function distSeg(px, pz, [x1, z1, x2, z2]) {
-  const dx = x2 - x1, dz = z2 - z1, t = THREE.MathUtils.clamp(((px - x1) * dx + (pz - z1) * dz) / (dx * dx + dz * dz), 0, 1);
-  return Math.hypot(px - (x1 + t * dx), pz - (z1 + t * dz));
+function ribbonGeo(sm, wd, tile = 2.6) {
+  const pos = [], uv = [], idx = []; let len = 0;
+  for (let i = 0; i < sm.length; i++) {
+    const p = sm[i], a = sm[Math.max(0, i - 1)], b = sm[Math.min(sm.length - 1, i + 1)];
+    let tx = b[0] - a[0], tz = b[1] - a[1]; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+    if (i) len += Math.hypot(p[0] - sm[i - 1][0], p[1] - sm[i - 1][1]);
+    pos.push(p[0] - tz * wd / 2, 0, p[1] + tx * wd / 2, p[0] + tz * wd / 2, 0, p[1] - tx * wd / 2);
+    uv.push(0, len / tile, wd / tile, len / tile);
+    if (i) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }   // 위쪽(+y)을 보도록 감는 방향
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+const cobbleStrip = cobbleMat(2.6, 2.6);
+function pathRibbon(pts, wd = 1.8) {
+  const sm = catmull(pts, 12); PATHS.push({ pts: sm, wd }); sm.forEach(p => ROADPTS.push(p));
+  const m = new THREE.Mesh(ribbonGeo(sm, wd), cobbleStrip); m.position.y = 0.03; m.receiveShadow = true; m.userData.noOutline = true; scene.add(m);
 }
 
 // 빛 번짐(글로우)
@@ -349,7 +353,7 @@ function latticeWindow(face, cx, cy, ww, hh, shutter) {
 }
 
 function house(x, z, color = 0xdcb878, ry, o = {}) {
-  const { w = 6.4, d = 5, h = 2.9, roofH = 2.6, light = true, shutter = 0x7a3a2a, sign = '우리집' } = o;
+  const { w = 6.4, d = 5, h = 2.9, roofH = 2.6, light = true, shutter = 0x7a3a2a, sign = null } = o;
   const g = new THREE.Group(); g.position.set(x, 0, z);
   const phi = ry === undefined ? Math.atan2(PLAZA.x - x, PLAZA.z - z) : ry; g.rotation.y = phi; scene.add(g);
   const plaster = mat(color, { map: stuccoTex }), base = 0.55, topY = base + h, mid = base + h * 0.5;
@@ -450,9 +454,11 @@ function house(x, z, color = 0xdcb878, ry, o = {}) {
   const lant = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 0.24), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd890).multiplyScalar(2.0) })); lant.position.set(lx + 0.3, base + 1.75, 0.3); df.add(lant);
   const cap = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.16, 4), MATS.timber); cap.rotation.y = Math.PI / 4; cap.position.set(lx + 0.3, base + 1.99, 0.3); cap.userData.noOutline = true; df.add(cap);
   glow(df, lx + 0.3, base + 1.75, 0.5, 2.0, 0.9);
-  part(0.12, 1.1, 0.12, MATS.timberLight, -2.4, 0.55, d / 2 + 1.7, g);
-  const board = part(1.0, 0.5, 0.08, MATS.timberLight, -2.4, 1.05, d / 2 + 1.78, g, { out: true, shadow: true }); board.material = mat(0xffffff, { map: signTexture(sign) });
-  blob(g, 0.55, 0.08, 0.14, -2.4, 1.33, d / 2 + 1.78);
+  if (sign) {   // 표지판은 상점에만
+    part(0.12, 1.1, 0.12, MATS.timberLight, -2.4, 0.55, d / 2 + 1.7, g);
+    const board = part(1.0, 0.5, 0.08, MATS.timberLight, -2.4, 1.05, d / 2 + 1.78, g, { out: true, shadow: true }); board.material = mat(0xffffff, { map: signTexture(sign) });
+    blob(g, 0.55, 0.08, 0.14, -2.4, 1.33, d / 2 + 1.78);
+  }
 
   // 장작더미 (오른쪽 벽 옆)
   const wp = new THREE.Group(); wp.position.set(w / 2 + 0.55, 0, -d * 0.12); g.add(wp);
@@ -474,86 +480,41 @@ function house(x, z, color = 0xdcb878, ry, o = {}) {
   if (light) { const pl = new THREE.PointLight(0xff9a3c, 9, 11, 2); pl.position.set(0, 2.1, d / 2 + 2.2); g.add(pl); }
 
   const dist = d / 2 + 2.1, fxw = x + Math.sin(phi) * dist, fzw = z + Math.cos(phi) * dist;
-  HOUSES.push({ x, z }); COLLIDERS.push({ x, z, r: Math.max(w, d) * 0.64 });
-  road(PLAZA.x, PLAZA.z, fxw, fzw);
+  HOUSES.push({ x, z, phi, w, d, base, h }); COLLIDERS.push({ x, z, r: Math.max(w, d) * 0.64 });
+  g.userData.front = [fxw, fzw];
   return g;
 }
-house(-15, -13, 0xdcb878, undefined, { sign: '빵집', shutter: 0x3f6b4a });
-house(15, -13, 0xe3c796, undefined, { sign: '잡화점', shutter: 0x8a3a2a });
-house(-19, 4, 0xd6a96a, undefined, { w: 5.8, d: 4.6, sign: '꽃집', shutter: 0x2f5a7a });
-house(19, 6, 0xe0bf8a, undefined, { w: 6, d: 4.6, sign: '우체국', shutter: 0x8a3f5a });
-house(-6, -21, 0xd9b27a, undefined, { w: 7, d: 5, h: 3.1, sign: '여관', shutter: 0xb5483d });
-house(-25, -7, 0xdcb878, undefined, { w: 5.8, d: 4.8, sign: '목공소', shutter: 0x3f6b4a });
-house(25, -4, 0xe3c796, undefined, { w: 6.2, d: 4.8, sign: '찻집', shutter: 0x2f5a7a });
-house(-9, 19, 0xd6a96a, undefined, { w: 6.2, d: 4.8, sign: '약방', shutter: 0x8a3f5a });
-house(13, 19, 0xe0bf8a, undefined, { w: 5.8, d: 4.6, sign: '우리집', shutter: 0xb5483d });
+// 마을배치도 기준 건물 6채: 집A(-16,4) 집B(-12,-14) 집C(12,-14) 집D(16,2) 상점(14,-6) 찻집(-14,-6)
+const hA = house(-16, 4, 0xd6a96a, 1.4, { w: 5.8, d: 4.6, shutter: 0x2f5a7a });
+const hB = house(-12, -14, 0xdcb878, 0.2, { shutter: 0x3f6b4a });
+const hC = house(12, -14, 0xe3c796, -0.2, { shutter: 0x8a3a2a });
+const hD = house(16, 2, 0xe0bf8a, -1.4, { w: 6, d: 4.6, shutter: 0x8a3f5a });
+const hShop = house(14, -6, 0xd9b27a, -1.57, { w: 6.2, d: 4.8, sign: '상점', shutter: 0xb5483d });
+const hTea = house(-14, -6, 0xdcb878, 1.57, { w: 5.8, d: 4.8, shutter: 0x2f5a7a });
+// 길 (광장 → 각 집 문 앞)
+pathRibbon([[0, 30], [0, 25], [1.2, 18], [0, 10]], 3.2);
+pathRibbon([[-9, 2], [-13, 5], hA.userData.front], 2.6);
+pathRibbon([[9, 1], [13, 3.5], hD.userData.front], 2.6);
+pathRibbon([[-6, -8], [-9, -11], hB.userData.front], 2.6);
+pathRibbon([[6, -8], [9, -11], hC.userData.front], 2.6);
+pathRibbon([[8.5, -3], [9.2, -4.6], hShop.userData.front], 2.6);
+pathRibbon([[-8.5, -3], [-9.2, -4.6], hTea.userData.front], 2.6);
+pathRibbon([[0, -9], [-2, -14], [1, -19], [0, -23]], 1.8);
+pathRibbon(Array.from({ length: 49 }, (_, i) => { const a = i / 48 * Math.PI * 2; return [Math.cos(a) * 11.9, Math.sin(a) * 11.9 + 1]; }), 3);
 
-// 눈 쌓인 소나무 (건물/길을 피해서)
-// 나무 한 층: 위가 뾰족하고 아래로 갈수록 퍼지는 종 모양, 가장자리는 들쭉날쭉 (낮은 폴리 + 각진 면)
-function tierGeo(r, h, lift = 0, valley = 0, seed = 0, scale = 1) {
-  const seg = 10, g = new THREE.ConeGeometry(r, h, seg, 2, true), pos = g.attributes.position;
-  const rad = t => r * (t < 0.5 ? 0.62 * (t / 0.5) : 0.62 + 0.38 * ((t - 0.5) / 0.5));
-  const hash = k => { const v = Math.sin((k + 1) * 127.1 + seed * 311.7) * 43758.5453; return v - Math.floor(v); };
-  for (let i = 0; i < pos.count; i++) {
-    const row = Math.floor(i / (seg + 1)), col = i % (seg + 1), c = col % seg, a = col / seg * Math.PI * 2;
-    let t = row * 0.5, rr;
-    if (row === 2) {
-      const dip = c % 2 ? valley : lift;                       // 눈 아랫단: 뾰족/오목 번갈아
-      t = 1 - (dip + hash(c) * 0.08 * h) / h; rr = rad(t) * (c % 2 ? 0.92 : 1.04) * (0.94 + hash(c + 9) * 0.12);
-    } else rr = rad(t) * (row === 1 ? 0.95 + hash(c + 4) * 0.1 : 1);
-    pos.setXYZ(i, Math.sin(a) * rr * scale, h / 2 - t * h, Math.cos(a) * rr * scale);
-  }
-  const f = g.toNonIndexed(); f.computeVertexNormals(); return f;
-}
-function tree(x, z, sc = 1) {
-  const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(sc); g.rotation.y = rng() * 6; scene.add(g);
-  box(0.5, 1.2, 0.5, 0x6b4a2b, 0, 0.6, 0, g);
-  const tiers = [[2.5, 2.0, 0.9], [2.1, 1.9, 1.8], [1.7, 1.8, 2.7], [1.3, 1.7, 3.55], [0.9, 1.6, 4.3]];
-  tiers.forEach(([r, h, y], i) => {
-    const green = new THREE.Mesh(tierGeo(r, h, 0, 0, i), mat(i % 2 ? 0x3a8348 : 0x2f7a46));
-    green.position.y = y + h / 2; green.rotation.y = i * 0.7; green.castShadow = true; green.userData.noOutline = true; g.add(green);
-    const snow = new THREE.Mesh(tierGeo(r, h, h * 0.04, h * 0.26, i + 5, 1.035), mat(0xf4f8ff));
-    snow.position.y = y + h / 2 + 0.03; snow.rotation.y = green.rotation.y; snow.castShadow = true; snow.userData.noOutline = true; g.add(snow);
-  });
-}
-const clear = (x, z, hr, rr, pr) => HOUSES.every(h => Math.hypot(h.x - x, h.z - z) > hr) && ROADS.every(r => distSeg(x, z, r) > rr) && Math.hypot(x - PLAZA.x, z - PLAZA.z) > pr;
-for (let n = 0, i = 0; n < 10 && i < 400; i++) {
-  const a = rng() * Math.PI * 2, r = R(16, 40), x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (clear(x, z, 8, 3.2, PLAZA_R + 2)) { tree(x, z, R(0.9, 1.35)); n++; }
-}
-// 마을 가까이에도 큼직한 나무 몇 그루
-for (let n = 0, i = 0; n < 6 && i < 400; i++) {
-  const a = rng() * Math.PI * 2, r = R(12, 24), x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (clear(x, z, 6.5, 3.6, PLAZA_R + 0.8)) { tree(x, z, R(1.2, 1.6)); n++; }
-}
-// 눈 더미
-for (let n = 0, i = 0; n < 46 && i < 500; i++) {
-  const a = rng() * Math.PI * 2, r = R(8, 55), x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (!clear(x, z, 6, 3.4, PLAZA_R + 1.5)) continue;
-  const s = R(1.2, 4), m = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 8), mat(0xffffff));
-  m.scale.set(s, s * R(0.22, 0.36), s * R(0.8, 1.2)); m.position.set(x, 0, z); m.receiveShadow = true; m.userData.noOutline = true; scene.add(m); n++;
+// 얼어붙은 개울 (마을배치도: 남쪽, 다리 아래)
+const STREAMPTS = catmull([[-37, 26], [-20, 22], [0, 24], [20, 21], [37, 25]], 12);
+{
+  const bed = new THREE.Mesh(ribbonGeo(STREAMPTS, 5.4, 4), snowBedMat); bed.position.y = 0.02; bed.userData.noOutline = true; scene.add(bed);
+  const ice = new THREE.Mesh(ribbonGeo(STREAMPTS, 3.4, 3), new THREE.MeshToonMaterial({ color: 0xb9dcf2, gradientMap: toonGrad, emissive: 0x2c4a6a, emissiveIntensity: 0.5 }));
+  ice.position.y = 0.035; ice.receiveShadow = true; ice.userData.noOutline = true; scene.add(ice);
+  const ice2 = new THREE.Mesh(ribbonGeo(STREAMPTS, 1.6, 3), new THREE.MeshToonMaterial({ color: 0xe0f3ff, gradientMap: toonGrad, emissive: 0x4a6a8a, emissiveIntensity: 0.4 }));
+  ice2.position.y = 0.04; ice2.userData.noOutline = true; scene.add(ice2);
 }
 
-// 눈사람
-(function snowman() {
-  const g = new THREE.Group(); g.position.set(-5, 0, 4); scene.add(g);
-  [[0.8, 0.8], [0.6, 1.9], [0.4, 2.7]].forEach(([r, y]) => {
-    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), mat(0xffffff)); s.position.y = y; s.castShadow = true; g.add(s);
-  });
-  const n = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.4, 8), mat(0xff7a1a));
-  n.position.set(0, 2.7, 0.4); n.rotation.x = Math.PI / 2; g.add(n);
-})();
-
-// 가로등 (따뜻한 노란 불빛)
-function lamp(x, z, withLight = false) {
-  box(0.14, 3.2, 0.14, 0x2f3340, x, 1.6, z);
-  box(0.5, 0.12, 0.5, 0x2f3340, x, 3.25, z);
-  const b = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe08a).multiplyScalar(1.9) }));
-  b.position.set(x, 3.5, z); scene.add(b);
-  glow(scene, x, 3.5, z, 3.6, 0.9);
-  if (withLight) { const pl = new THREE.PointLight(0xffc766, 10, 11, 2); pl.position.set(x, 3.3, z); scene.add(pl); }
-}
-lamp(-4, -2, true); lamp(8, -1, true); lamp(9, 8); lamp(-9, 8); lamp(-8, -9); lamp(14, -8); lamp(-1, 14); lamp(5, 13);
+// 소품/나무/눈사람/가로등/눈더미: Kenney Holiday Kit (village.js, decor.js)
+const village = await buildVillage({ THREE, scene, mat, toonGrad, rng, R, PLAZA, HOUSES, COLLIDERS, ROADPTS, PATHS, STREAMPTS, catmull, ribbonGeo, glow, glowTex, addOutlines, box, skyGroup, HOUSE_FRONTS: [hA, hB, hC, hD, hShop, hTea].map(h => h.userData.front),
+  extra: (v, c) => buildDecor(v, c) });
 
 // ---------- 붕어빵 노점 ----------
 const STALL = new THREE.Vector3(0, 0, -6);
@@ -640,7 +601,7 @@ function setSlotState(s, st) {
 // 2등신 겨울 캐릭터 (characters.js: 옵션 조합식)
 const { chubby, PRESETS, setOutfit } = createCharacterFactory({ THREE, mat, addOutlines, scene });
 const player = chubby(PRESETS.player);
-player.position.set(0, 0, 4);
+player.position.set(0, 0, 28.5);   // 마을배치도: 다리 건너편 스폰 (0,29)
 const customer = chubby(PRESETS.kid);
 const CUST_POS = new THREE.Vector3(3.8, 0, -3.4);
 customer.position.copy(CUST_POS); customer.rotation.y = Math.PI;
@@ -648,7 +609,7 @@ customer.position.copy(CUST_POS); customer.rotation.y = Math.PI;
 window.__dbg = window.__dbg || {}; window.__dbg.player = player; window.__dbg.chubby = chubby; window.__dbg.PRESETS = PRESETS; window.__dbg.setOutfit = setOutfit;   // 개발용
 // 마을 주민 5명 (손님 자리의 꼬마 포함 총 6명 + 플레이어): 집 앞/광장에 배치, 각자 다른 대기 모션
 const NPC_LIST = [customer];
-const NPC_SPOTS = { grandma: [-10.5, -9.5], postman: [14.2, 4.0], cafe: [-13.4, 2.0], prankster: [-3.4, 5.8] };
+const NPC_SPOTS = { grandma: [-10.5, -9.2], postman: [12.2, 4.2], cafe: [-12.6, 2.4], prankster: [-4.6, 6.4] };
 for (const [id, [x, z]] of Object.entries(NPC_SPOTS)) {
   const n = chubby(PRESETS[id]); n.position.set(x, 0, z);
   n.rotation.y = Math.atan2(PLAZA.x - x, PLAZA.z - z); n.userData.id = id; NPC_LIST.push(n);
@@ -855,6 +816,7 @@ function tick() {
   if (!order) { orderTimer -= dt; if (orderTimer <= 0) newOrder(); }
   if (mode === 'third') warm.intensity = 14;
 
+  village.update(dt, clock.elapsedTime, player, moving);
   player.userData.update(dt, clock.elapsedTime, moving); for (const n of NPC_LIST) n.userData.update(dt, clock.elapsedTime, false);
   if (USE_BLOOM) composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(tick);

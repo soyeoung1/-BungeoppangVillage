@@ -11,10 +11,12 @@
   #msg{position:fixed;left:50%;bottom:60px;transform:translateX(-50%);background:#000a;color:#fff;padding:10px 20px;border-radius:12px;font-size:18px;display:none}
   #order{position:fixed;right:18px;top:60px;background:#fffd;color:#333;padding:10px 16px;border-radius:14px;font-size:17px;text-shadow:none;display:none}
   #help{position:fixed;left:18px;bottom:14px;color:#fff;font-size:14px;text-shadow:0 1px 3px #000;white-space:pre-line}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#16233f;color:#fff;font-size:26px;z-index:50;letter-spacing:1px}
   #cross{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#fff8;display:none}
 </style>
 </head>
 <body>
+<div id="loading">마을 불러오는 중...</div>
 <div id="hud">
   <div id="top"><div id="money">💰 0원</div><div id="inv">🐟 쟁반: 0개</div></div>
 </div>

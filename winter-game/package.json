@@ -17,6 +17,9 @@
       "characters.js",
       "audio.js",
       "save.js",
+      "village.js",
+      "decor.js",
+      "assets/holiday/*.glb",
       "electron-main.js",
       "vendor/**/*",
       "package.json"

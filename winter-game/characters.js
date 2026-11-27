@@ -28,8 +28,10 @@ export function createCharacterFactory({ THREE, addOutlines, scene }) {
   function std(color, o = {}) {
     const key = color + '|' + (o.rough ?? 0.7) + '|' + (o.mapKey || '') + '|' + (o.side || 0) + '|' + (o.emis || 0);
     // 밤에도 칙칙하지 않게: 색(또는 무늬)을 아주 약하게 스스로 발광시켜 그림자 쪽을 살짝 밝힘
-    return mats[key] ||= rimify(new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.7, metalness: 0, map: o.map, side: o.side || THREE.FrontSide,
-      emissive: o.emis ?? color, emissiveMap: o.map, emissiveIntensity: o.emis !== undefined ? 1 : 0.2 }));
+    if (mats[key]) return mats[key];
+    const prm = { color, roughness: o.rough ?? 0.7, metalness: 0, side: o.side || THREE.FrontSide, emissive: o.emis ?? color, emissiveIntensity: o.emis !== undefined ? 1 : 0.2 };
+    if (o.map) { prm.map = o.map; prm.emissiveMap = o.map; }
+    return mats[key] = rimify(new THREE.MeshStandardMaterial(prm));
   }
   function canvasTex(key, W, H, draw) {
     if (texs[key]) return texs[key];
