@@ -642,8 +642,8 @@ let tray = [];                // 구운 붕어빵 품질(0~1) 목록
 let order = null;             // {n}
 let orderTimer = 0;
 const keys = {};
-let yaw = 0, pitch = 0.45, camDist = 7;
-window.__dbg = Object.assign(window.__dbg || {}, { tp: (x, z, y = yaw, d = camDist, p = pitch) => { player.position.set(x, 0, z); yaw = y; camDist = d; pitch = p; } });  // 개발용: 위치/시점 이동
+let yaw = 0, pitch = 0.45, camDist = 7, camDistTarget = 7;   // 휠로 camDistTarget을 바꾸면 camDist가 부드럽게 따라감 (3.5~16)
+window.__dbg = Object.assign(window.__dbg || {}, { tp: (x, z, y = yaw, d = camDist, p = pitch) => { player.position.set(x, 0, z); yaw = y; camDist = camDistTarget = d; pitch = p; } });  // 개발용: 위치/시점 이동
 let dragging = false;
 let hoverSlot = null;
 const mouse = new THREE.Vector2();
@@ -666,7 +666,7 @@ let msgT = 0;
 function say(t, sec = 2) { const m = $('msg'); m.textContent = t; m.style.display = 'block'; msgT = sec; }
 function setHelp() {
   $('help').textContent = mode === 'third'
-    ? 'WASD / 방향키: 이동   마우스 드래그: 카메라   노점 앞에서 E: 붕어빵 굽기   손님 앞에서 E: 판매'
+    ? 'WASD / 방향키: 이동   마우스 드래그: 카메라   휠: 확대/축소   노점 앞에서 E: 붕어빵 굽기   손님 앞에서 E: 판매'
     : '🖱 좌클릭: 반죽 붓기 → 팥 넣기 → 뒤집기\n🖱 우클릭(또는 X): 꺼내기   ESC: 돌아가기\n앞뒤 모두 황금색일 때 꺼내면 최고!';
 }
 
@@ -696,6 +696,12 @@ renderer.domElement.addEventListener('mousedown', e => {
 });
 addEventListener('mouseup', () => dragging = false);
 addEventListener('contextmenu', e => e.preventDefault());
+// 휠/터치패드 핀치(ctrl+휠로 들어옴): 3인칭에서만 확대·축소
+addEventListener('wheel', e => {
+  e.preventDefault();
+  if (mode === 'first') return;
+  camDistTarget = THREE.MathUtils.clamp(camDistTarget + e.deltaY * (e.ctrlKey ? 0.03 : 0.006), 3.5, 16);
+}, { passive: false });
 addEventListener('mousemove', e => {
   mouse.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   if (mode === 'third' && dragging) { yaw -= e.movementX * 0.005; pitch = THREE.MathUtils.clamp(pitch + e.movementY * 0.004, 0.15, 1.2); }
@@ -771,7 +777,9 @@ function tick() {
     if (Math.abs(pp.x) < 2.9 && pp.z < -4.8 && pp.z > -7.4) pp.z = pp.z > -6 ? -4.8 : -7.4;
     const r = Math.hypot(pp.x, pp.z); if (r > 34) { pp.x *= 34 / r; pp.z *= 34 / r; }
     for (const c of COLLIDERS) { const dx = pp.x - c.x, dz = pp.z - c.z, dd = Math.hypot(dx, dz); if (dd < c.r) { pp.x = c.x + dx / dd * c.r; pp.z = c.z + dz / dd * c.r; } }
-    // 카메라
+    // 카메라 (줌: camDist가 목표값을 부드럽게 따라가고, 멀리 볼수록 안개도 늘려서 먼 곳이 하얗게 안 날아감)
+    camDist += (camDistTarget - camDist) * (1 - Math.pow(0.002, dt));
+    scene.fog.near = 45 + Math.max(0, camDist - 7) * 8; scene.fog.far = 300 + Math.max(0, camDist - 7) * 40;
     desired.set(pp.x + Math.sin(yaw) * Math.cos(pitch) * camDist, pp.y + 1 + Math.sin(pitch) * camDist, pp.z + Math.cos(yaw) * Math.cos(pitch) * camDist);
     camera.position.lerp(desired, 1 - Math.pow(0.0005, dt));
     camTarget.set(pp.x, 1.2, pp.z); camera.lookAt(camTarget);
