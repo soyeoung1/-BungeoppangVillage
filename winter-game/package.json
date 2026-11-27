@@ -14,6 +14,9 @@
     "files": [
       "index.html",
       "main.js",
+      "characters.js",
+      "audio.js",
+      "save.js",
       "electron-main.js",
       "vendor/**/*",
       "package.json"

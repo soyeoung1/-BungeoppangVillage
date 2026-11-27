@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createCharacterFactory } from './characters.js';
 
 // ---------- 기본 세팅 (푸른 저녁 밤 분위기) ----------
 const scene = new THREE.Scene();
@@ -636,50 +637,23 @@ function setSlotState(s, st) {
 }
 
 // ---------- 플레이어 / 손님 ----------
-// 통통한 캐릭터: 큰 구체 몸통 + 큰 머리 + 볼터치
-function chubby(o = {}) {
-  const { shirt = 0x3f7fbf, skin = 0xffdcc0, scarf = 0xd9453d, hat = { type: 'beanie', color: 0xd9453d } } = o;
-  const g = new THREE.Group();
-  const S = (r, c, sx = 1, sy = 1, sz = 1, noOut = false) => {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), mat(c));
-    m.scale.set(sx, sy, sz); m.castShadow = true; if (noOut) m.userData.noOutline = true; return m;
-  };
-  const body = S(0.5, shirt, 1, 0.95, 0.95); body.position.y = 0.5;
-  const head = S(0.46, skin); head.position.y = 1.3;
-  const eyeL = S(0.045, 0x2a2438, 1, 1.3, 0.6, true); eyeL.position.set(-0.15, 1.33, 0.41);
-  const eyeR = eyeL.clone(); eyeR.position.x = 0.15;
-  const chL = S(0.065, 0xff9fb0, 1, 0.7, 0.4, true); chL.position.set(-0.27, 1.2, 0.36);
-  const chR = chL.clone(); chR.position.x = 0.27;
-  const armL = S(0.15, shirt); armL.position.set(-0.52, 0.6, 0.05);
-  const armR = armL.clone(); armR.position.x = 0.52;
-  const footL = S(0.17, 0x5a4a6a, 1, 0.7, 1.3); footL.position.set(-0.2, 0.1, 0.1);
-  const footR = footL.clone(); footR.position.x = 0.2;
-  const sc = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.09, 8, 20), mat(scarf));
-  sc.rotation.x = Math.PI / 2; sc.position.y = 0.98;
-  g.add(body, head, eyeL, eyeR, chL, chR, armL, armR, footL, footR, sc);
-  const hc = hat.color;
-  if (hat.type === 'beanie' || hat.type === 'bear') {
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.49, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), mat(hc));
-    cap.position.y = 1.32; cap.castShadow = true; g.add(cap);
-    if (hat.type === 'beanie') { const p = S(0.11, 0xffffff); p.position.y = 1.84; g.add(p); }
-    else for (const sx of [-1, 1]) { const e = S(0.14, hc); e.position.set(sx * 0.32, 1.73, 0); g.add(e); }
-  } else if (hat.type === 'santa') {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.8, 14), mat(0xd9302a));
-    cone.position.set(0, 1.9, 0); cone.rotation.z = 0.15; cone.castShadow = true;
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.08, 8, 20), mat(0xffffff));
-    band.rotation.x = Math.PI / 2; band.position.y = 1.55;
-    const p = S(0.1, 0xffffff); p.position.set(0.14, 2.3, 0);
-    g.add(cone, band, p);
-  }
-  g.userData.body = body; g.userData.arms = [armL, armR];
-  g.userData.shirtMeshes = [body, armL, armR];
-  scene.add(g); return g;
-}
-const player = chubby({ shirt: 0x3f7fbf });
+// 2등신 겨울 캐릭터 (characters.js: 옵션 조합식)
+const { chubby, PRESETS } = createCharacterFactory({ THREE, mat, addOutlines, scene });
+const player = chubby(PRESETS.player);
 player.position.set(0, 0, 4);
-const customer = chubby({ shirt: 0x7bbf6a, hat: { type: 'beanie', color: 0x6a6a99 }, scarf: 0xf2c14e });
+const customer = chubby(PRESETS.kid);
 const CUST_POS = new THREE.Vector3(3.8, 0, -3.4);
 customer.position.copy(CUST_POS); customer.rotation.y = Math.PI;
+
+window.__dbg = window.__dbg || {}; window.__dbg.player = player;   // 개발용
+// 마을 주민 5명 (손님 자리의 꼬마 포함 총 6명 + 플레이어): 집 앞/광장에 배치, 각자 다른 대기 모션
+const NPC_LIST = [customer];
+const NPC_SPOTS = { grandma: [-10.5, -9.5], postman: [14.2, 4.0], cafe: [-13.4, 2.0], prankster: [-3.4, 5.8] };
+for (const [id, [x, z]] of Object.entries(NPC_SPOTS)) {
+  const n = chubby(PRESETS[id]); n.position.set(x, 0, z);
+  n.rotation.y = Math.atan2(PLAZA.x - x, PLAZA.z - z); n.userData.id = id; NPC_LIST.push(n);
+}
+window.__dbg.npcs = NPC_LIST;   // 개발용
 
 addOutlines(scene);
 
@@ -708,7 +682,7 @@ let order = null;             // {n}
 let orderTimer = 0;
 const keys = {};
 let yaw = 0, pitch = 0.45, camDist = 7;
-window.__dbg = { tp: (x, z, y = yaw, d = camDist, p = pitch) => { player.position.set(x, 0, z); yaw = y; camDist = d; pitch = p; } };  // 개발용: 위치/시점 이동
+window.__dbg = Object.assign(window.__dbg || {}, { tp: (x, z, y = yaw, d = camDist, p = pitch) => { player.position.set(x, 0, z); yaw = y; camDist = d; pitch = p; } });  // 개발용: 위치/시점 이동
 let dragging = false;
 let hoverSlot = null;
 const mouse = new THREE.Vector2();
@@ -718,7 +692,6 @@ function newOrder() {
   order = { n: 1 + Math.floor(Math.random() * 3) };
   customer.visible = true;
   const cols = [0x7bbf6a, 0xbf7bb6, 0xbfa24a, 0x6aa6bf];
-  customer.userData.shirtMeshes.forEach(m => m.material.color.setHex(cols[Math.floor(Math.random() * cols.length)]));
   updateHUD();
 }
 function updateHUD() {
@@ -807,6 +780,7 @@ const desired = new THREE.Vector3();
 setHelp(); newOrder();
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  let moving = false;
 
   skyGroup.position.copy(camera.position);
   updateSmoke(dt, clock.elapsedTime);
@@ -829,7 +803,7 @@ function tick() {
       const vx = mx * cos + mz * sin, vz = -mx * sin + mz * cos;
       player.position.x += vx * 5 * dt; player.position.z += vz * 5 * dt;
       player.rotation.y = Math.atan2(vx, vz);
-      player.position.y = Math.abs(Math.sin(clock.elapsedTime * 10)) * 0.06;
+      moving = true;
     }
     // 충돌(카운터, 맵 경계)
     const pp = player.position;
@@ -881,6 +855,7 @@ function tick() {
   if (!order) { orderTimer -= dt; if (orderTimer <= 0) newOrder(); }
   if (mode === 'third') warm.intensity = 14;
 
+  player.userData.update(dt, clock.elapsedTime, moving); for (const n of NPC_LIST) n.userData.update(dt, clock.elapsedTime, false);
   if (USE_BLOOM) composer.render(); else renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
