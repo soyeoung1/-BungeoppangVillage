@@ -286,19 +286,38 @@ chalet(-9, 19, { w: 6, d: 4.6, wall: 0x7a4e2c, shutter: 0x8a3f5a });
 chalet(13, 19, { w: 5.6, d: 4.4, wall: 0x8a5a34, shutter: 0xb5483d });
 
 // 눈 쌓인 소나무 (건물/길을 피해서)
-function tree(x, z) {
-  box(0.4, 1.2, 0.4, 0x6b4a2b, x, 0.6, z);
-  for (let i = 0; i < 3; i++) {
-    const c = new THREE.Mesh(new THREE.ConeGeometry(1.6 - i * 0.4, 1.8, 8), mat(0x2f6b4a));
-    c.position.set(x, 1.8 + i * 1.0, z); c.castShadow = true; scene.add(c);
-    const s = new THREE.Mesh(new THREE.ConeGeometry(0.9 - i * 0.2, 0.6, 8), mat(0xffffff));
-    s.position.set(x, 2.4 + i * 1.0, z); scene.add(s);
+function snowCap(r, h, seg = 12) {
+  // 초록 층 위에 덮인 눈: 아랫단이 톱니처럼 들쭉날쭉
+  const g = new THREE.ConeGeometry(r, h, seg, 1, true), pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    if (pos.getY(i) < 0) {
+      const px = pos.getX(i), pz = pos.getZ(i), k = Math.round(Math.atan2(pz, px) / (Math.PI * 2 / seg)), odd = Math.abs(k) % 2;
+      pos.setXYZ(i, px * (odd ? 0.78 : 1.04), -h / 2 - (odd ? 0.28 * h : 0), pz * (odd ? 0.78 : 1.04));
+    }
   }
+  g.computeVertexNormals(); return g;
+}
+function tree(x, z, sc = 1) {
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(sc); scene.add(g);
+  box(0.5, 1.0, 0.5, 0x6b4a2b, 0, 0.5, 0, g);
+  const tiers = [[2.1, 1.7, 1.0], [1.7, 1.55, 2.0], [1.3, 1.4, 2.9], [0.85, 1.3, 3.75]];
+  tiers.forEach(([r, h, y], i) => {
+    const green = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), mat(i % 2 ? 0x3f8a3f : 0x4a9a3c));
+    green.position.y = y + h / 2; green.rotation.y = i * 0.4; green.castShadow = true; g.add(green);
+    const cap = new THREE.Mesh(snowCap(r * 0.93, h * 0.82), mat(0xf4f8ff));
+    cap.position.y = y + h - h * 0.41 + 0.03; cap.rotation.y = green.rotation.y; cap.userData.noOutline = true; g.add(cap);
+  });
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), mat(0xffffff)); top.position.y = 5.1; g.add(top);
 }
 const clear = (x, z, hr, rr, pr) => HOUSES.every(h => Math.hypot(h.x - x, h.z - z) > hr) && ROADS.every(r => distSeg(x, z, r) > rr) && Math.hypot(x - PLAZA.x, z - PLAZA.z) > pr;
 for (let n = 0, i = 0; n < 34 && i < 400; i++) {
   const a = rng() * Math.PI * 2, r = R(16, 40), x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (clear(x, z, 8, 3.2, PLAZA_R + 2)) { tree(x, z); n++; }
+  if (clear(x, z, 8, 3.2, PLAZA_R + 2)) { tree(x, z, R(0.9, 1.35)); n++; }
+}
+// 마을 가까이에도 큼직한 나무 몇 그루
+for (let n = 0, i = 0; n < 9 && i < 400; i++) {
+  const a = rng() * Math.PI * 2, r = R(12, 24), x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (clear(x, z, 6.5, 3.6, PLAZA_R + 0.8)) { tree(x, z, R(1.2, 1.6)); n++; }
 }
 // 눈 더미
 for (let n = 0, i = 0; n < 46 && i < 500; i++) {
