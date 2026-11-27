@@ -142,7 +142,7 @@ function mountain(x, z, r, h, sn) {
 
 // 멀리 보이는 숲 (인스턴싱으로 가볍게)
 {
-  const N = 650, cg = new THREE.ConeGeometry(1.5, 3.6, 7), sg = new THREE.ConeGeometry(1.05, 1.7, 7);
+  const N = 260, cg = new THREE.ConeGeometry(1.5, 3.6, 7), sg = new THREE.ConeGeometry(1.05, 1.7, 7);
   const a = new THREE.InstancedMesh(cg, mat(0x1f4a44), N), b = new THREE.InstancedMesh(sg, mat(0xf5f8ff), N), d = new THREE.Object3D();
   for (let i = 0; i < N; i++) {
     const ang = rng() * Math.PI * 2, rr = R(46, 105), s = R(1, 2.6);
@@ -286,36 +286,40 @@ chalet(-9, 19, { w: 6, d: 4.6, wall: 0x7a4e2c, shutter: 0x8a3f5a });
 chalet(13, 19, { w: 5.6, d: 4.4, wall: 0x8a5a34, shutter: 0xb5483d });
 
 // 눈 쌓인 소나무 (건물/길을 피해서)
-function snowCap(r, h, seg = 12) {
-  // 초록 층 위에 덮인 눈: 아랫단이 톱니처럼 들쭉날쭉
-  const g = new THREE.ConeGeometry(r, h, seg, 1, true), pos = g.attributes.position;
+// 나무 한 층: 위가 뾰족하고 아래로 갈수록 퍼지는 종 모양, 가장자리는 들쭉날쭉 (낮은 폴리 + 각진 면)
+function tierGeo(r, h, lift = 0, valley = 0, seed = 0, scale = 1) {
+  const seg = 10, g = new THREE.ConeGeometry(r, h, seg, 2, true), pos = g.attributes.position;
+  const rad = t => r * (t < 0.5 ? 0.62 * (t / 0.5) : 0.62 + 0.38 * ((t - 0.5) / 0.5));
+  const hash = k => { const v = Math.sin((k + 1) * 127.1 + seed * 311.7) * 43758.5453; return v - Math.floor(v); };
   for (let i = 0; i < pos.count; i++) {
-    if (pos.getY(i) < 0) {
-      const px = pos.getX(i), pz = pos.getZ(i), k = Math.round(Math.atan2(pz, px) / (Math.PI * 2 / seg)), odd = Math.abs(k) % 2;
-      pos.setXYZ(i, px * (odd ? 0.78 : 1.04), -h / 2 - (odd ? 0.28 * h : 0), pz * (odd ? 0.78 : 1.04));
-    }
+    const row = Math.floor(i / (seg + 1)), col = i % (seg + 1), c = col % seg, a = col / seg * Math.PI * 2;
+    let t = row * 0.5, rr;
+    if (row === 2) {
+      const dip = c % 2 ? valley : lift;                       // 눈 아랫단: 뾰족/오목 번갈아
+      t = 1 - (dip + hash(c) * 0.08 * h) / h; rr = rad(t) * (c % 2 ? 0.92 : 1.04) * (0.94 + hash(c + 9) * 0.12);
+    } else rr = rad(t) * (row === 1 ? 0.95 + hash(c + 4) * 0.1 : 1);
+    pos.setXYZ(i, Math.sin(a) * rr * scale, h / 2 - t * h, Math.cos(a) * rr * scale);
   }
-  g.computeVertexNormals(); return g;
+  const f = g.toNonIndexed(); f.computeVertexNormals(); return f;
 }
 function tree(x, z, sc = 1) {
-  const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(sc); scene.add(g);
-  box(0.5, 1.0, 0.5, 0x6b4a2b, 0, 0.5, 0, g);
-  const tiers = [[2.1, 1.7, 1.0], [1.7, 1.55, 2.0], [1.3, 1.4, 2.9], [0.85, 1.3, 3.75]];
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(sc); g.rotation.y = rng() * 6; scene.add(g);
+  box(0.5, 1.2, 0.5, 0x6b4a2b, 0, 0.6, 0, g);
+  const tiers = [[2.5, 2.0, 0.9], [2.1, 1.9, 1.8], [1.7, 1.8, 2.7], [1.3, 1.7, 3.55], [0.9, 1.6, 4.3]];
   tiers.forEach(([r, h, y], i) => {
-    const green = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), mat(i % 2 ? 0x3f8a3f : 0x4a9a3c));
-    green.position.y = y + h / 2; green.rotation.y = i * 0.4; green.castShadow = true; g.add(green);
-    const cap = new THREE.Mesh(snowCap(r * 0.93, h * 0.82), mat(0xf4f8ff));
-    cap.position.y = y + h - h * 0.41 + 0.03; cap.rotation.y = green.rotation.y; cap.userData.noOutline = true; g.add(cap);
+    const green = new THREE.Mesh(tierGeo(r, h, 0, 0, i), mat(i % 2 ? 0x3a8348 : 0x2f7a46));
+    green.position.y = y + h / 2; green.rotation.y = i * 0.7; green.castShadow = true; green.userData.noOutline = true; g.add(green);
+    const snow = new THREE.Mesh(tierGeo(r, h, h * 0.04, h * 0.26, i + 5, 1.035), mat(0xf4f8ff));
+    snow.position.y = y + h / 2 + 0.03; snow.rotation.y = green.rotation.y; snow.castShadow = true; snow.userData.noOutline = true; g.add(snow);
   });
-  const top = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), mat(0xffffff)); top.position.y = 5.1; g.add(top);
 }
 const clear = (x, z, hr, rr, pr) => HOUSES.every(h => Math.hypot(h.x - x, h.z - z) > hr) && ROADS.every(r => distSeg(x, z, r) > rr) && Math.hypot(x - PLAZA.x, z - PLAZA.z) > pr;
-for (let n = 0, i = 0; n < 34 && i < 400; i++) {
+for (let n = 0, i = 0; n < 10 && i < 400; i++) {
   const a = rng() * Math.PI * 2, r = R(16, 40), x = Math.cos(a) * r, z = Math.sin(a) * r;
   if (clear(x, z, 8, 3.2, PLAZA_R + 2)) { tree(x, z, R(0.9, 1.35)); n++; }
 }
 // 마을 가까이에도 큼직한 나무 몇 그루
-for (let n = 0, i = 0; n < 9 && i < 400; i++) {
+for (let n = 0, i = 0; n < 6 && i < 400; i++) {
   const a = rng() * Math.PI * 2, r = R(12, 24), x = Math.cos(a) * r, z = Math.sin(a) * r;
   if (clear(x, z, 6.5, 3.6, PLAZA_R + 0.8)) { tree(x, z, R(1.2, 1.6)); n++; }
 }
