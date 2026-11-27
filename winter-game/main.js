@@ -17,7 +17,7 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-scene.add(new THREE.HemisphereLight(0x9bb8ff, 0x5a6890, 1.15));     // 푸른 밤하늘빛
+scene.add(new THREE.HemisphereLight(0x9bb8ff, 0x7a6cae, 1.15));     // 푸른 밤하늘빛
 const sun = new THREE.DirectionalLight(0xbcd2ff, 0.85);              // 달빛
 sun.shadow.bias = -0.0005; sun.shadow.radius = 4;
 sun.position.set(-14, 24, 10); sun.castShadow = true;
@@ -215,17 +215,79 @@ function glow(parent, x, y, z, size = 2.2, op = 0.85) {
 
 // ===== 따뜻한 겨울 마을 목조 집 (하프팀버 + 아치문 + 두꺼운 눈지붕) =====
 const HOUSES = [], COLLIDERS = [], SMOKES = [];
+// ---- Canvas 텍스처: 나뭇결 / 돌 / 회벽 / 간판 (외부 이미지 없이 코드로 그림) ----
+function canvasTex(W, H, draw) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; draw(c.getContext('2d'), W, H);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+function woodTexture(rgb, { planks = 0, rot = false } = {}) {
+  const t = canvasTex(128, 256, (x, W, H) => {
+    x.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 48; i++) {                                           // 나뭇결
+      const x0 = rng() * W, amp = 1 + rng() * 3, f = 0.02 + rng() * 0.03, ph = rng() * 6;
+      x.strokeStyle = rng() < 0.65 ? `rgba(0,0,0,${0.08 + rng() * 0.2})` : `rgba(255,235,200,${0.05 + rng() * 0.1})`;
+      x.lineWidth = 1 + rng() * 2.5; x.beginPath();
+      for (let y = 0; y <= H; y += 8) { const xx = x0 + Math.sin(y * f + ph) * amp; y ? x.lineTo(xx, y) : x.moveTo(xx, y); }
+      x.stroke();
+    }
+    for (let i = 0; i < 2; i++) {                                            // 옹이
+      const kx = rng() * W, ky = rng() * H;
+      for (let k = 4; k > 0; k--) { x.strokeStyle = `rgba(0,0,0,${0.12 + k * 0.04})`; x.lineWidth = 2; x.beginPath(); x.ellipse(kx, ky, 3 + k * 3, 6 + k * 6, 0, 0, 7); x.stroke(); }
+    }
+    for (let p = 1; p < planks; p++) { x.fillStyle = 'rgba(0,0,0,0.5)'; x.fillRect(p * W / planks - 1.5, 0, 3, H); }
+  });
+  if (rot) { t.center.set(0.5, 0.5); t.rotation = Math.PI / 2; }
+  return t;
+}
+const stoneTex = canvasTex(256, 128, (x, W, H) => {
+  x.fillStyle = '#5a5668'; x.fillRect(0, 0, W, H);
+  for (let r = 0; r < 2; r++) {
+    let px = -(r % 2) * 26 - rng() * 12;
+    while (px < W) {
+      const w = 42 + rng() * 30, sh = 118 + rng() * 48 | 0;
+      for (const off of [0, -W]) {
+        x.fillStyle = `rgb(${sh},${sh - 4},${sh + 14})`; x.beginPath(); x.roundRect(px + off + 2, r * 64 + 2, w - 4, 60, 10); x.fill();
+        x.fillStyle = 'rgba(255,255,255,0.15)'; x.beginPath(); x.roundRect(px + off + 5, r * 64 + 4, w - 12, 18, 8); x.fill();
+      }
+      px += w;
+    }
+  }
+  for (let i = 0; i < 10; i++) { x.fillStyle = `rgba(255,255,255,${0.2 + rng() * 0.3})`; x.beginPath(); x.ellipse(rng() * W, rng() * H, 5 + rng() * 9, 2 + rng() * 3, 0, 0, 7); x.fill(); }
+});
+function stoneMat(rx, ry) { const t = stoneTex.clone(); t.needsUpdate = true; t.repeat.set(rx, ry); return mat(0xffffff, { map: t }); }
+const stuccoTex = canvasTex(128, 128, (x, W, H) => {
+  x.fillStyle = '#f4f0e8'; x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 700; i++) { x.fillStyle = rng() < 0.5 ? `rgba(120,90,50,${0.03 + rng() * 0.07})` : `rgba(255,255,255,${0.1 + rng() * 0.2})`; x.beginPath(); x.arc(rng() * W, rng() * H, 0.6 + rng() * 1.8, 0, 7); x.fill(); }
+});
+const ringTex = canvasTex(64, 64, (x, W) => {
+  x.fillStyle = '#d9b27a'; x.fillRect(0, 0, W, W);
+  for (let r = 30; r > 2; r -= 4) { x.strokeStyle = `rgba(110,70,30,${0.25 + (30 - r) / 70})`; x.lineWidth = 1.5; x.beginPath(); x.arc(32, 32, r, 0, 7); x.stroke(); }
+});
+function signTexture(text) {
+  return canvasTex(256, 128, (x, W, H) => {
+    x.fillStyle = '#9a6a38'; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 24; i++) { x.strokeStyle = `rgba(0,0,0,${0.06 + rng() * 0.12})`; x.lineWidth = 1 + rng() * 2; x.beginPath(); x.moveTo(0, rng() * H); x.lineTo(W, rng() * H); x.stroke(); }
+    x.strokeStyle = '#4a2c18'; x.lineWidth = 8; x.strokeRect(4, 4, W - 8, H - 8);
+    x.fillStyle = '#3a2112'; x.font = 'bold 58px "Malgun Gothic", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, W / 2, H / 2 + 4);
+  });
+}
+const wt = (rgb, o) => mat(0xffffff, { map: woodTexture(rgb, o) });
 const MATS = {
-  timber: mat(0x4a2c18), timberLight: mat(0x7a4b26), stone: mat(0x8d8a99), snow: mat(0xeaf2ff), roof: mat(0x5a3a2a),
-  log: mat(0x8a5a30), logEnd: mat(0xd9b27a),
+  timber: wt([74, 44, 24]), timberH: wt([74, 44, 24], { rot: true }),
+  timberLight: wt([128, 80, 40]), timberLightH: wt([128, 80, 40], { rot: true }),
+  roof: wt([92, 60, 42], { planks: 5 }), roofH: wt([92, 60, 42], { planks: 5, rot: true }),
+  stone: stoneMat(4, 1), stoneStep: stoneMat(1.4, 1), stoneChim: stoneMat(1, 2.6),
+  snow: mat(0xe6eeff), log: wt([140, 92, 50]), logEnd: mat(0xffffff, { map: ringTex }),
   glass: new THREE.MeshBasicMaterial({ color: 0xffcf6a }), glassWarm: new THREE.MeshBasicMaterial({ color: 0xffb347 }),
 };
+const HOR = new Map([[MATS.timber, MATS.timberH], [MATS.timberLight, MATS.timberLightH], [MATS.roof, MATS.roofH]]);
 const smokeTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
   const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.5, 'rgba(235,240,255,0.5)'); g.addColorStop(1, 'rgba(235,240,255,0)');
   x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c);
 })();
 function part(w, h, d, m, x, y, z, parent, o = {}) {
+  if (HOR.has(m) && w > h * 1.4 && w >= d) m = HOR.get(m);
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m.isMaterial ? m : mat(m));
   mesh.position.set(x, y, z); mesh.castShadow = !!o.shadow; mesh.receiveShadow = true;
   if (!o.out) mesh.userData.noOutline = true; parent.add(mesh); return mesh;
@@ -276,7 +338,7 @@ function house(x, z, color = 0xdcb878, ry, o = {}) {
   const { w = 6.4, d = 5, h = 2.9, roofH = 2.6, light = true, shutter = 0x7a3a2a, sign = '우리집' } = o;
   const g = new THREE.Group(); g.position.set(x, 0, z);
   const phi = ry === undefined ? Math.atan2(PLAZA.x - x, PLAZA.z - z) : ry; g.rotation.y = phi; scene.add(g);
-  const plaster = mat(color), base = 0.55, topY = base + h, mid = base + h * 0.5;
+  const plaster = mat(color, { map: stuccoTex }), base = 0.55, topY = base + h, mid = base + h * 0.5;
 
   // 돌 기단 + 벽
   part(w + 0.4, base, d + 0.4, MATS.stone, 0, base / 2, 0, g, { out: true, shadow: true });
@@ -317,7 +379,7 @@ function house(x, z, color = 0xdcb878, ry, o = {}) {
   const sh = base / 3;
   for (let k = 0; k < 3; k++) {
     const hh = (k + 1) * sh, zc = d / 2 + 0.2 + (2 - k) * 0.5 + 0.25;
-    part(2.3, hh, 0.5, MATS.stone, 0, hh / 2, zc, g, { out: true, shadow: true });
+    part(2.3, hh, 0.5, MATS.stoneStep, 0, hh / 2, zc, g, { out: true, shadow: true });
     blob(g, 1.08, 0.05, 0.22, 0, hh + 0.01, zc);
   }
   for (const sx of [-1, 1]) {
@@ -364,7 +426,7 @@ function house(x, z, color = 0xdcb878, ry, o = {}) {
 
   // 굴뚝 + 눈 + 연기
   const chx = w * 0.24, chy = topY + roofH * 0.52 + 0.75;
-  part(0.85, 2.1, 0.85, MATS.stone, chx, chy, -d * 0.15, g, { out: true, shadow: true });
+  part(0.85, 2.1, 0.85, MATS.stoneChim, chx, chy, -d * 0.15, g, { out: true, shadow: true });
   blob(g, 0.62, 0.22, 0.62, chx, chy + 1.1, -d * 0.15);
   addSmoke(g, chx, chy + 1.2, -d * 0.15);
 
@@ -375,7 +437,7 @@ function house(x, z, color = 0xdcb878, ry, o = {}) {
   const cap = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.16, 4), MATS.timber); cap.rotation.y = Math.PI / 4; cap.position.set(lx + 0.3, base + 1.99, 0.3); cap.userData.noOutline = true; df.add(cap);
   glow(df, lx + 0.3, base + 1.75, 0.5, 2.0, 0.9);
   part(0.12, 1.1, 0.12, MATS.timberLight, -2.4, 0.55, d / 2 + 1.7, g);
-  const board = part(1.0, 0.5, 0.08, MATS.timberLight, -2.4, 1.05, d / 2 + 1.78, g, { out: true, shadow: true }); board.name = 'signboard'; board.userData.signText = sign;
+  const board = part(1.0, 0.5, 0.08, MATS.timberLight, -2.4, 1.05, d / 2 + 1.78, g, { out: true, shadow: true }); board.material = mat(0xffffff, { map: signTexture(sign) });
   blob(g, 0.55, 0.08, 0.14, -2.4, 1.33, d / 2 + 1.78);
 
   // 장작더미 (오른쪽 벽 옆)
