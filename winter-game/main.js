@@ -190,7 +190,22 @@ function flat(geo, material, y, x = 0, z = 0) {
   m.receiveShadow = true; m.userData.noOutline = true; scene.add(m); return m;
 }
 // 광장 (0,1) r=9
-flat(new THREE.CircleGeometry(PLAZA_R, 56), cobbleMat(PLAZA_R * 2, PLAZA_R * 2), 0.045, PLAZA.x, PLAZA.z);
+const PLAZA_VR = PLAZA_R * 1.2;                       // 눈으로 번지는 구간까지 포함한 돌바닥 반지름
+{
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d'), img = x.createImageData(S, S);
+  const sm = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+    const dx = (i + 0.5) / S * 2 - 1, dz = (j + 0.5) / S * 2 - 1, r = Math.hypot(dx, dz), th = Math.atan2(dz, dx);
+    const edge = 0.80 + 0.05 * Math.sin(5 * th + 1) + 0.035 * Math.sin(9 * th + 2) + 0.025 * Math.sin(17 * th) + 0.02 * Math.sin(31 * th + 4);   // 들쭉날쭉한 가장자리
+    const n = 0.025 * Math.sin(i * 0.9) * Math.sin(j * 0.8);
+    const a = 1 - sm(edge - 0.16, edge + 0.03, r + n), k = (j * S + i) * 4;
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = Math.round(a * 255); img.data[k + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  const fade = new THREE.CanvasTexture(c), pm = cobbleMat(PLAZA_VR * 2, PLAZA_VR * 2);
+  pm.alphaMap = fade; pm.transparent = true; pm.depthWrite = false;
+  flat(new THREE.CircleGeometry(PLAZA_VR, 64), pm, 0.045, PLAZA.x, PLAZA.z);
+}
 // 길: 마을배치도의 구불구불한 길 (Catmull-Rom 곡선 → 띠 메시)
 function catmull(pts, n = 10) {
   const out = [];
@@ -492,15 +507,10 @@ const hD = house(16, 2, 0xe0bf8a, -1.4, { w: 6, d: 4.6, shutter: 0x8a3f5a });
 const hShop = house(14, -6, 0xd9b27a, -1.57, { w: 6.2, d: 4.8, sign: '상점', shutter: 0xb5483d });
 const hTea = house(-14, -6, 0xdcb878, 1.57, { w: 5.8, d: 4.8, shutter: 0x2f5a7a });
 // 길 (광장 → 각 집 문 앞)
-pathRibbon([[0, 30], [0, 25], [1.2, 18], [0, 10]], 3.2);
-pathRibbon([[-9, 2], [-13, 5], hA.userData.front], 2.6);
-pathRibbon([[9, 1], [13, 3.5], hD.userData.front], 2.6);
-pathRibbon([[-6, -8], [-9, -11], hB.userData.front], 2.6);
-pathRibbon([[6, -8], [9, -11], hC.userData.front], 2.6);
-pathRibbon([[8.5, -3], [9.2, -4.6], hShop.userData.front], 2.6);
-pathRibbon([[-8.5, -3], [-9.2, -4.6], hTea.userData.front], 2.6);
-pathRibbon([[0, -9], [-2, -14], [1, -19], [0, -23]], 1.8);
-pathRibbon(Array.from({ length: 49 }, (_, i) => { const a = i / 48 * Math.PI * 2; return [Math.cos(a) * 11.9, Math.sin(a) * 11.9 + 1]; }), 3);
+// 길은 그리지 않는다. 눈에 보이지 않는 '다닌 흔적' 경로만 기록 → 징검돌·발자국·장식·나무 피하기에 사용
+function trail(pts, wd = 2.2) { const sm = catmull(pts, 12); PATHS.push({ pts: sm, wd }); sm.forEach(p => ROADPTS.push(p)); }
+trail([[0, 30], [0, 25], [1.2, 18], [0, 10.5]], 2.4);                                          // 다리 → 광장
+for (const h of [hA, hB, hC, hD, hShop, hTea]) { const f = h.userData.front, dx = f[0] - PLAZA.x, dz = f[1] - PLAZA.z, l = Math.hypot(dx, dz); trail([[PLAZA.x + dx / l * 9.5, PLAZA.z + dz / l * 9.5], [PLAZA.x + dx * 0.72 + dz / l * 1.2, PLAZA.z + dz * 0.72 - dx / l * 1.2], f], 2.0); }
 
 // 얼어붙은 개울 (마을배치도: 남쪽, 다리 아래)
 const STREAMPTS = catmull([[-37, 26], [-20, 22], [0, 24], [20, 21], [37, 25]], 12);
@@ -512,8 +522,25 @@ const STREAMPTS = catmull([[-37, 26], [-20, 22], [0, 24], [20, 21], [37, 25]], 1
   ice2.position.y = 0.04; ice2.userData.noOutline = true; scene.add(ice2);
 }
 
+// 눈밭 요철: 마을(광장/집/개울) 가까이는 평평하게, 바깥으로 갈수록 완만하게 출렁이는 눈 언덕
+{
+  const g = new THREE.PlaneGeometry(110, 110, 150, 150); g.rotateX(-Math.PI / 2);
+  const P = g.attributes.position, sm = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const dmin = (x, z, pts) => { let d = 1e9; for (const p of pts) { const e = Math.hypot(x - p[0], z - p[1]); if (e < d) d = e; } return d; };
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z);
+    let amp = sm(15, 26, Math.hypot(x - PLAZA.x, z - PLAZA.z)) * (1 - sm(42, 54, r));
+    for (const h of HOUSES) amp *= sm(5, 12, Math.hypot(x - h.x, z - h.z));
+    amp *= sm(4, 8, dmin(x, z, STREAMPTS)) * sm(3, 8, Math.hypot(x, z + 24)) * sm(5, 9, Math.hypot(x, z - 28));
+    P.setY(i, amp * (0.1 + 0.14 * (Math.sin(x * 0.21 + 1.3) * Math.cos(z * 0.17) + 0.6 * Math.sin(x * 0.47 + z * 0.39) + 0.3 * Math.sin(z * 0.83 - x * 0.31))));
+  }
+  g.computeVertexNormals();
+  const bump = new THREE.Mesh(g, mat(0xeef3ff)); bump.receiveShadow = true; bump.userData.noOutline = true; scene.add(bump);
+  ground.position.y = -0.06;
+}
+
 // 소품/나무/눈사람/가로등/눈더미: Kenney Holiday Kit (village.js, decor.js)
-const village = await buildVillage({ THREE, scene, mat, toonGrad, rng, R, PLAZA, HOUSES, COLLIDERS, ROADPTS, PATHS, STREAMPTS, catmull, ribbonGeo, glow, glowTex, addOutlines, box, skyGroup, HOUSE_FRONTS: [hA, hB, hC, hD, hShop, hTea].map(h => h.userData.front),
+const village = await buildVillage({ THREE, scene, mat, toonGrad, rng, R, PLAZA, HOUSES, COLLIDERS, ROADPTS, PATHS, STREAMPTS, catmull, ribbonGeo, glow, glowTex, addOutlines, box, skyGroup, HOUSE_FRONTS: [hA, hB, hC, hD, hShop, hTea].map(h => h.userData.front), PLAZA_R,
   extra: (v, c) => buildDecor(v, c) });
 
 // ---------- 붕어빵 노점 ----------

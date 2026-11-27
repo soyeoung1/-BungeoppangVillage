@@ -164,6 +164,36 @@ export async function buildDecor(v, ctx) {
     snowballs(-1.8, -23.2, 4); snowballs(1.2, -22.8, 3); prop('rocks-medium', 5.2, -26.5, { s: 1.3 });
   }
 
+  // ───────── 광장 가장자리: 눈 에셋을 들쭉날쭉 크기·간격으로 두르고, 돌바닥이 눈에 파묻히듯 사라지게 ─────────
+  {
+    const PR = ctx.PLAZA_R || 9.6;
+    for (let a = R(0, 0.2); a < Math.PI * 2; a += R(0.07, 0.19)) {
+      const r = PR + R(-0.5, 1.5), x = PLAZA.x + Math.cos(a) * r, z = PLAZA.z + Math.sin(a) * r, k = rng();
+      if (Math.hypot(x, z) > 32) continue;
+      if (k < 0.5) prop(rnd(['snow-flat', 'snow-flat-large']), x, z, { s: R(1.2, 2.4), y: 0.055, out: false });
+      else if (k < 0.68) prop('snow-pile', x, z, { s: R(1.6, 3.2), y: 0.02 });
+      else if (k < 0.82) prop('floor-stone', x - Math.cos(a) * 0.5, z - Math.sin(a) * 0.5, { s: R(0.55, 0.95), y: 0.05, out: false });
+      else if (k < 0.9) prop(rnd(['rocks-small']), x, z, { s: R(0.7, 1.1) });
+      if (rng() < 0.45) snowballs(x + R(-0.5, 0.5), z + R(-0.5, 0.5), 1 + Math.floor(rng() * 4), 0.7);
+    }
+    // 다닌 흔적: 광장에서 집/다리 방향으로 징검돌 + 드문드문 발자국 (길을 그리지 않음)
+    const fgeo = new THREE.PlaneGeometry(0.2, 0.34); fgeo.rotateX(-Math.PI / 2);
+    const fmat = new THREE.MeshBasicMaterial({ color: 0x18203c, transparent: true, opacity: 0.2, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+    for (const P of PATHS) {
+      let acc = 0, side = 1, pairAcc = 0;
+      for (let i = 1; i < P.pts.length; i++) {
+        const a = P.pts[i - 1], b = P.pts[i], seg = Math.hypot(b[0] - a[0], b[1] - a[1]); acc += seg; pairAcc += seg;
+        const tx = (b[0] - a[0]) / (seg || 1), tz = (b[1] - a[1]) / (seg || 1), ry = Math.atan2(tx, tz);
+        if (Math.hypot(b[0] - PLAZA.x, b[1] - PLAZA.z) < ctx.PLAZA_R + 0.6 || HOUSES.some(h => Math.hypot(b[0] - h.x, b[1] - h.z) < 5.5)) continue;
+        if (acc > 1.15) { acc = 0; if (rng() < 0.7) prop('floor-stone', b[0] + R(-0.4, 0.4), b[1] + R(-0.4, 0.4), { s: R(0.45, 0.8), y: 0.04, out: false }); }
+        if (pairAcc > 2.4 && rng() < 0.8) {
+          pairAcc = 0; side = -side;
+          for (const o of [0, 0.55]) { const f = new THREE.Mesh(fgeo, fmat); f.position.set(b[0] + (-tz * 0.16 * side) + tx * o, 0.06, b[1] + (tx * 0.16 * side) + tz * o); f.rotation.y = ry; f.userData.noOutline = true; scene.add(f); side = -side; }
+        }
+      }
+    }
+  }
+
   // ───────── 집 앞: 선물 · 작은 전나무 · 화환 · 문 앞 돌판 · 사이드 눈더미 ─────────
   for (const h of HOUSES) {
     const rot = h.phi;
